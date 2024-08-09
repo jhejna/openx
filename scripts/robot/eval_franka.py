@@ -1,5 +1,5 @@
 """
-Script for evaluation on a Franka Panda robot. 
+Script for evaluation on a Franka Panda robot.
 Designed for use with the robot-lightning repository on the panda branch:
 
 https://github.com/jhejna/robot-lightning/tree/panda
@@ -10,7 +10,6 @@ import os
 import pickle
 from datetime import datetime
 from functools import partial
-import time
 
 import cv2
 import flax
@@ -31,7 +30,7 @@ from openx.utils.spec import add_kwarg, recursively_instantiate
 FLAGS = flags.FLAGS
 flags.DEFINE_string("path", None, "Path to checkpoint folder.")
 flags.DEFINE_string("checkpoint_step", None, "Checkpoint step to load.")
-flags.DEFINE_string( "robot_config_path", None, "Path to robot config")
+flags.DEFINE_string("robot_config_path", None, "Path to robot config")
 flags.DEFINE_string("goal_path", None, "Path to a goal state")
 flags.DEFINE_bool("show_image", True, "Whether or not to display the robot images.")
 flags.DEFINE_string("video_save_path", None, "whether or not to save videos.")
@@ -129,7 +128,7 @@ def main(_):
     goal = preprocess_goal(goal, structure, dataset_statistics, scale_range)
 
     obs, _ = env.reset()
-    while input("Quit?\n") != 'q':
+    while input("Quit?\n") != "q":
         image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)
         steps = 0
         done, trunc = False, False
@@ -169,6 +168,7 @@ def main(_):
             video = np.stack(images)
             imageio.mimsave(save_path, video, fps=1.0 / 0.1 * 3)
             obs, _ = env.reset()
+
 
 if __name__ == "__main__":
     app.run(main)

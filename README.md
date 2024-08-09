@@ -25,6 +25,11 @@ We benchmarked some of our implementations against Pytorch versions in robomimic
 
 First, follow the instructions to install `mujoco210_linux` found [here](https://github.com/openai/mujoco-py)
 
+```
+sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
+conda install -c conda-forge gcc=12.1.0
+```
+
 Then, install robosuite, robomimic, and needed dependencies.
 ```
 # Robosuite
@@ -42,6 +47,7 @@ cd ..
 # Dependencies
 pip install "mujoco-py<2.2,>=2.0"
 pip install cython==0.29.37
+pip install numba
 ```
 
 Then repeatedly try to import mujoco_py, robosuite, and robomimic until it works. There are a few manual changes to the code in robosuite and robomimic you will need to make:
@@ -78,4 +84,3 @@ The following features are planned:
 * Incorporate language (choose where the instruction / encoding belongs)
 * allow for changing the action keys for different datasets. ie on bridge we want to train on `achieved_delta` but on other datasets we want `desired_delta`.
 * figure out if we can make the OXE shuffle buffer bigger.
-* Add more architectures and masking schemes

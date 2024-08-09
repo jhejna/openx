@@ -12,12 +12,12 @@ import optax
 import orbax
 import tensorflow as tf
 import tqdm
+import wandb
 from absl import app, flags
 from flax.training import orbax_utils, train_state
 from jax.experimental import compilation_cache, multihost_utils
 from ml_collections import config_flags
 
-import wandb
 from openx.data.dataloader import make_dataloader
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy
