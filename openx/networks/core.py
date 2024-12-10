@@ -38,8 +38,7 @@ class Model(nn.Module):
         obs = self.trunk(obs, train=train)
         if self.is_initializing():
             return self.action_head(obs, train=train)
-        else:
-            return obs  # Return the encoded observation, keep action head separate.
+        return obs  # Return the encoded observation, keep action head separate.
 
     def predict(self, batch: Dict, train: bool = True):
         x = self(batch, train=train)

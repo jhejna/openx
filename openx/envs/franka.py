@@ -6,7 +6,7 @@ from openx.data.utils import StateEncoding
 
 
 def convert_obs(obs):
-    obs = dict(
+    return dict(
         image=dict(
             agent=obs["agent_image"],
             wrist=obs["wrist_image"],
@@ -19,7 +19,6 @@ def convert_obs(obs):
             StateEncoding.GRIPPER: obs["state"]["gripper_pos"],
         },
     )
-    return obs
 
 
 def convert_act(act):
@@ -29,7 +28,7 @@ def convert_act(act):
     """
     ee_key = next(k for k in ("achieved_delta", "desired_delta") if k in act)
     # TODO: print out gripper actions?
-    bridge_act = np.concatenate(
+    return np.concatenate(
         [
             act[ee_key][StateEncoding.EE_POS],
             act[ee_key][StateEncoding.EE_EULER],
@@ -38,7 +37,6 @@ def convert_act(act):
             ),  # Rescale gripper back to [-1, 1]
         ]
     )
-    return bridge_act
 
 
 class FrankaEnv(gym.Env):

@@ -17,10 +17,10 @@ def state_to_eep(xyz_coor, zangle: float):
     return a 4x4 matrix
     """
     assert len(xyz_coor) == 3
-    DEFAULT_ROTATION = np.array([[0, 0, 1.0], [0, 1.0, 0], [-1.0, 0, 0]])
+    default_rotation = np.array([[0, 0, 1.0], [0, 1.0, 0], [-1.0, 0, 0]])
     new_pose = np.eye(4)
     new_pose[:3, -1] = xyz_coor
-    new_quat = Quaternion(axis=np.array([0.0, 0.0, 1.0]), angle=zangle) * Quaternion(matrix=DEFAULT_ROTATION)
+    new_quat = Quaternion(axis=np.array([0.0, 0.0, 1.0]), angle=zangle) * Quaternion(matrix=default_rotation)
     new_pose[:3, :3] = new_quat.rotation_matrix
     # yaw, pitch, roll = quat.yaw_pitch_roll
     return new_pose
@@ -70,14 +70,13 @@ def convert_act(act):
     return: act, shape(7,)
     """
     ee_key = next(k for k in ("achieved_delta", "desired_delta") if k in act)
-    bridge_act = np.concatenate(
+    return np.concatenate(
         [
             act[ee_key][StateEncoding.EE_POS],
             act[ee_key][StateEncoding.EE_EULER],
             np.clip(1 - act["desired_absolute"][StateEncoding.GRIPPER], a_min=0, a_max=1),  # Invert gripper
         ]
     )
-    return bridge_act
 
 
 class WidowXGym(gym.Env):

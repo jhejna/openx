@@ -99,37 +99,35 @@ def uniform_goal_relabeling(ep: Dict):
 def _normalize(x, mode: NormalizationType, mean, std, low, high):
     if mode == NormalizationType.NONE:
         return x
-    elif mode == NormalizationType.GAUSSIAN:
+    if mode == NormalizationType.GAUSSIAN:
         return tf.math.divide_no_nan(x - mean, std)
-    elif mode == NormalizationType.BOUNDS:
+    if mode == NormalizationType.BOUNDS:
         x = tf.clip_by_value(x, low, high)
         # Apply divide_no_nan to allow for constant fields.
         return 2 * tf.math.divide_no_nan(x - low, high - low) - 1
-    elif mode == NormalizationType.BOUNDS_5STDV:
+    if mode == NormalizationType.BOUNDS_5STDV:
         low = tf.maximum(low, mean - 5 * std)
         high = tf.minimum(high, mean + 5 * std)
         x = tf.clip_by_value(x, low, high)
         # Apply divide_no_nan to allow for constant fields.
         return 2 * tf.math.divide_no_nan(x - low, high - low) - 1
-    else:
-        raise ValueError("Invalid Mode selected")
+    raise ValueError("Invalid Mode selected")
 
 
 def _unnormalize(x, mode: NormalizationType, mean, std, low, high):
     if mode == NormalizationType.NONE:
         return x
-    elif mode == NormalizationType.GAUSSIAN:
+    if mode == NormalizationType.GAUSSIAN:
         return std * x + mean
-    elif mode == NormalizationType.BOUNDS:
+    if mode == NormalizationType.BOUNDS:
         x = tf.clip_by_value(x, -1, 1)
         return ((x + 1) / 2) * (high - low) + low
-    elif mode == NormalizationType.BOUNDS_5STDV:
+    if mode == NormalizationType.BOUNDS_5STDV:
         low = tf.maximum(low, mean - 5 * std)
         high = tf.minimum(high, mean + 5 * std)
         x = tf.clip_by_value(x, -1, 1)
         return ((x + 1) / 2) * (high - low) + low
-    else:
-        raise ValueError("Invalid Mode selected")
+    raise ValueError("Invalid Mode selected")
 
 
 def normalize(ep, structure, dataset_statistics):
@@ -185,10 +183,7 @@ def _center_bbox(img_shape, desired_shape, scale_range: Optional[Tuple[float, fl
     im_h, im_w = img_shape[-3], img_shape[-2]
     im_h, im_w = tf.cast(im_h, dtype=tf.float32), tf.cast(im_w, dtype=tf.float32)
     ratio = desired_shape[-1] / desired_shape[-2]  # Width / Height
-    if scale_range is None:
-        scale = 1
-    else:
-        scale = (scale_range[1] + scale_range[0]) / 2
+    scale = 1 if scale_range is None else (scale_range[1] + scale_range[0]) / 2
     b_h = tf.minimum(im_h, im_w / ratio)
     b_w = b_h * ratio
     b_h, b_w = b_h * scale, b_w * scale
@@ -226,8 +221,7 @@ def _decode_and_augment(
         seed = tf.random.stateless_uniform([2], seed, maxval=tf.dtypes.int32.max, dtype=tf.int32)
         imgs = tf.image.stateless_random_hue(imgs, max_delta=hue, seed=seed)
     # Images are expected to be in 0 to 1 after decoding and convertion to float32
-    imgs = tf.clip_by_value(imgs, 0, 1)
-    return imgs
+    return tf.clip_by_value(imgs, 0, 1)
 
 
 def decode_and_augment(
@@ -252,8 +246,7 @@ def decode_and_augment(
             return _sample_random_bbox(
                 img_shape, structure, scale_range=scale_range, aspect_ratio_range=aspect_ratio_range
             )
-        else:
-            return _center_bbox(img_shape, structure, scale_range=scale_range)
+        return _center_bbox(img_shape, structure, scale_range=scale_range)
 
     # Define augmentations
     if train:
@@ -276,7 +269,7 @@ def decode_and_augment(
         }
         seeds = {
             k: tf.random.uniform([2], maxval=tf.dtypes.int32.max - 3, dtype=tf.int32)
-            for k in structure["observation"]["image"].keys()
+            for k in structure["observation"]["image"]
         }
     else:
         bboxes, seeds = None, None
@@ -287,9 +280,7 @@ def decode_and_augment(
         if bboxes is None:
             bboxes = {k: _get_bbox(observation["image"][k], v) for k, v in structure["image"].items()}
         if seeds is None:
-            seeds = {
-                k: tf.random.uniform([2], maxval=tf.dtypes.int32.max, dtype=tf.int32) for k in structure["image"].keys()
-            }
+            seeds = {k: tf.random.uniform([2], maxval=tf.dtypes.int32.max, dtype=tf.int32) for k in structure["image"]}
 
         # Map the augmentations over the images.
         observation["image"] = {
@@ -298,8 +289,7 @@ def decode_and_augment(
         }
         return observation
 
-    step = _apply(step, structure["observation"], bboxes=bboxes, seeds=seeds)
-    return step
+    return _apply(step, structure["observation"], bboxes=bboxes, seeds=seeds)
 
 
 def add_dataset_id(ep: Dict, dataset_id: int):
@@ -309,10 +299,7 @@ def add_dataset_id(ep: Dict, dataset_id: int):
 
 
 def random_noised_actions(step: Dict, train: bool = True, freq: int = 4):
-    if len(tf.shape(step["ep_idx"])) > 0:
-        ep_idx = step["ep_idx"][0]
-    else:
-        ep_idx = step["ep_idx"]
+    ep_idx = step["ep_idx"][0] if len(tf.shape(step["ep_idx"])) > 0 else step["ep_idx"]
     predicate = tf.math.floormod(ep_idx, freq) == 0
 
     step["action"] = tf.cond(
@@ -359,8 +346,7 @@ def blur_images(
         def _blur(image_stack):
             num_channels = tf.shape(image_stack)[-1]
             gaussian_kernel = tf.tile(kernel, [1, 1, num_channels, 1])
-            blurred = tf.nn.depthwise_conv2d(image_stack, gaussian_kernel, strides=[1, 1, 1, 1], padding="SAME")
-            return blurred
+            return tf.nn.depthwise_conv2d(image_stack, gaussian_kernel, strides=[1, 1, 1, 1], padding="SAME")
 
         obs["image"] = tf.nest.map_structure(_blur, obs["image"])
         return obs

@@ -137,8 +137,7 @@ def main(_):
     @jax.jit
     def predict(state, obs, rng):
         batch = dict(observation=obs)
-        action = model.apply(state.params, batch, rngs=dict(dropout=rng), train=False, method=model.predict)
-        return action
+        return model.apply(state.params, batch, rngs=dict(dropout=rng), train=False, method=model.predict)
 
     ### Setup Eval Envs ###
     envs = dict()
@@ -149,7 +148,7 @@ def main(_):
 
         def _make_env(fn, stats):
             env = fn()
-            env = wrap_env(
+            return wrap_env(
                 env,
                 structure=structure,
                 dataset_statistics=stats,
@@ -158,7 +157,6 @@ def main(_):
                 exec_horizon=max(1, n_action // 2),
                 scale_range=scale_range,
             )
-            return env
 
         for env_name, env_spec in FLAGS.config.envs.to_dict().items():
             env_fn = partial(_make_env, fn=ModuleSpec.instantiate(env_spec), stats=dataset_statistics[env_name])
@@ -208,11 +206,8 @@ def main(_):
             mode="offline" if FLAGS.debug else "online",
         )
 
-    if jax.process_index() == 0:
-        # Init Logging
-        logger = Logger(save_path, writers=() if FLAGS.debug else ("csv",))
-    else:
-        logger = DummyLogger()
+    # Init Logging
+    logger = Logger(save_path, writers=() if FLAGS.debug else ("csv",)) if jax.process_index() == 0 else DummyLogger()
     timer = Timer()
 
     # Training constants
@@ -241,12 +236,12 @@ def main(_):
             val_metrics = defaultdict(list)
             with timer("val"):
                 for p, val_iterator in val_iterators.items():
-                    p = p.replace("/", "-")  # Remove the '/' for logger
+                    prefix = p.replace("/", "-")  # Remove the '/' for logger
                     for _ in tqdm.tqdm(range(FLAGS.config.val_steps), total=FLAGS.config.val_steps):
                         batch = next(val_iterator)
                         val_loss, val_mse = val_step(state, batch)
-                        val_metrics[p + "/loss"].append(val_loss)
-                        val_metrics[p + "/mse"].append(val_mse)
+                        val_metrics[prefix + "/loss"].append(val_loss)
+                        val_metrics[prefix + "/mse"].append(val_mse)
 
             logger.update(val_metrics, prefix="val")
             logger.dump(step=step, eval=True)

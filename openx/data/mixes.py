@@ -257,7 +257,7 @@ OXE_MAGIC_SOUP = {
 }
 
 # The same as the magic soup mix, except do not apply weightings
-OXE_MAGIC_SOUP_SUBSET = {dataset: OXE_ALL[dataset] for dataset in OXE_MAGIC_SOUP.keys()}
+OXE_MAGIC_SOUP_SUBSET = {dataset: OXE_ALL[dataset] for dataset in OXE_MAGIC_SOUP}
 
 
 RTX_MIX = {
@@ -278,4 +278,4 @@ RTX_MIX = {
     ]
 }
 
-RTX_MIX_SUBSET = {dataset: OXE_ALL[dataset] for dataset in RTX_MIX.keys()}
+RTX_MIX_SUBSET = {dataset: OXE_ALL[dataset] for dataset in RTX_MIX}

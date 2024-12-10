@@ -21,24 +21,22 @@ def space_stack(space: gym.Space, repeat: int):
             high=np.repeat(space.high[None], repeat, axis=0),
             dtype=space.dtype,
         )
-    elif isinstance(space, gym.spaces.Discrete):
+    if isinstance(space, gym.spaces.Discrete):
         return gym.spaces.MultiDiscrete([space.n] * repeat)
-    elif isinstance(space, gym.spaces.Dict):
+    if isinstance(space, gym.spaces.Dict):
         return gym.spaces.Dict({k: space_stack(v, repeat) for k, v in space.spaces.items()})
-    else:
-        raise ValueError(f"Space {space} is not supported by Octo Gym wrappers.")
+    raise ValueError(f"Space {space} is not supported by Octo Gym wrappers.")
 
 
 def convert_to_space(space):
     if isinstance(space, gym.Space):
         return space
-    elif isinstance(space, dict):
+    if isinstance(space, dict):
         return gym.spaces.Dict({k: convert_to_space(v) for k, v in space.items()})
-    elif isinstance(space, np.ndarray):
+    if isinstance(space, np.ndarray):
         return gym.spaces.Box(low=-np.inf, high=np.inf, shape=space.shape, dtype=space.dtype)
     # For now, don't handle discrete spaces.
-    else:
-        raise ValueError("Invalid input passed to `convert_to_space`: " + str(type(space)))
+    raise ValueError("Invalid input passed to `convert_to_space`: " + str(type(space)))
 
 
 class HistoryWrapper(gym.Wrapper):
@@ -164,7 +162,7 @@ class ResizeImageWrapper(gym.Wrapper):
                 k: gym.spaces.Box(
                     shape=(*self.structure["observation"]["image"][k], 3), low=0, high=1, dtype=np.float32
                 )
-                for k in self.env.observation_space["image"].spaces.keys()
+                for k in self.env.observation_space["image"]
             }
             spaces["image"] = gym.spaces.Dict(image_spaces)
         self.observation_space = gym.spaces.Dict(spaces)
@@ -329,5 +327,4 @@ def preprocess_goal(
     # Resize images
     goal = _resize_images(goal, structure["observation"], scale_range=scale_range)
     # Add the temporal dimension
-    goal = tf.nest.map_structure(lambda x: x[None], goal)
-    return goal
+    return tf.nest.map_structure(lambda x: x[None], goal)

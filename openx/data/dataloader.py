@@ -167,7 +167,7 @@ def make_dataloader(
     weights = {k: v / total_weight for k, v in weights.items()}
     print("\n######################################################################################")
     print(f"# Loading the following {len(train_datasets)} datasets (incl. sampling weight):{'': >24} #")
-    for dataset_name in train_datasets.keys():
+    for dataset_name in train_datasets:
         pad = 80 - len(dataset_name)
         print(f"# {dataset_name}: {weights[dataset_name]:=>{pad}f} #")
     print("######################################################################################\n")

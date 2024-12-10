@@ -48,8 +48,7 @@ class Conv1dBlock(nn.Module):
             padding=self.kernel_size // 2,
         )(x)
         x = nn.GroupNorm(self.n_groups)(x)
-        x = mish(x)
-        return x
+        return mish(x)
 
 
 class ConditionalResidualBlock1D(nn.Module):
@@ -138,5 +137,4 @@ class ConditionalUnet1D(nn.Module):
             action = Upsample1d(features)(action)
 
         # Should be the same as the input shape
-        action = Conv1dBlock(self.down_features[0], kernel_size=self.kernel_size, n_groups=self.n_groups)(action)
-        return action
+        return Conv1dBlock(self.down_features[0], kernel_size=self.kernel_size, n_groups=self.n_groups)(action)

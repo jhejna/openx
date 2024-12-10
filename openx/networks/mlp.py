@@ -80,8 +80,7 @@ class SinusoidalPosEmb(nn.Module):
             emb = jnp.log(10000) / (half_features - 1)
             emb = jnp.exp(jnp.arange(half_features) * -emb)
             emb = x * emb
-        emb = jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)
-        return emb
+        return jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)
 
 
 class MLPResNet(nn.Module):
@@ -100,8 +99,8 @@ class MLPResNet(nn.Module):
             time, train=train
         )
         # Obs is (B, D). Action is (B, H, D), time is (B, D)
-        H, action_dim = action.shape[-2:]
-        action = action.reshape(-1, H * action_dim)
+        h, action_dim = action.shape[-2:]
+        action = action.reshape(-1, h * action_dim)
         x = jnp.concatenate((obs, action, time), axis=-1)
         x = nn.Dense(self.hidden_dim, kernel_init=default_init())(x)
         for _ in range(self.num_blocks):
@@ -111,5 +110,4 @@ class MLPResNet(nn.Module):
                 use_layer_norm=self.use_layer_norm,
                 dropout_rate=self.dropout_rate,
             )(x, train=train)
-        x = self.activation(x)  # Shape (B, hidden_dim)
-        return x
+        return self.activation(x)  # Shape (B, hidden_dim)

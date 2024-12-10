@@ -230,7 +230,7 @@ def main(_):
 
         def _make_env(fn, stats):
             env = fn()
-            env = wrap_env(
+            return wrap_env(
                 env,
                 structure=structure,
                 dataset_statistics=stats,
@@ -239,7 +239,6 @@ def main(_):
                 exec_horizon=max(1, n_action // 2),
                 scale_range=scale_range,
             )
-            return env
 
         for env_name, env_spec in FLAGS.config.envs.to_dict().items():
             env_fn = partial(_make_env, fn=ModuleSpec.instantiate(env_spec), stats=dataset_statistics[env_name])
@@ -297,11 +296,8 @@ def main(_):
             mode="offline" if FLAGS.debug else "online",
         )
 
-    if jax.process_index() == 0:
-        # Init Logging
-        logger = Logger(save_path, writers=() if FLAGS.debug else ("csv",))
-    else:
-        logger = DummyLogger()
+    # Init Logging
+    logger = Logger(save_path, writers=() if FLAGS.debug else ("csv",)) if jax.process_index() == 0 else DummyLogger()
     timer = Timer()
 
     # Training constants

@@ -20,11 +20,7 @@ class PatchEncoder(nn.Module):
     @nn.compact
     def __call__(self, obs, goal: Optional[jax.Array], train: bool = True):
         # Determine whether or not we concatenate
-        if goal is None:
-            x = obs
-        else:
-            # Obs is shape (B, T, H, W, C), Goal is shape (B, 1, H, W, C)
-            x = jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)  # Concat on channel axis
+        x = obs if goal is None else jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)
 
         # Shift inputs to -1 to 1 from 0 to 1
         x = 2 * x - 1
@@ -38,16 +34,14 @@ class PatchEncoder(nn.Module):
             dtype=self.dtype,
         )(x)
 
-        B, T, H, W, C = x.shape
-        x = jnp.reshape(x, [B, T, H * W, C])
-        return x
+        b, t, h, w, c = x.shape
+        return jnp.reshape(x, [b, t, h * w, c])  # (B, T, Num Tokens, C)
 
 
 def weight_standardize(w, axis, eps: float = 1e-5):
     """Subtracts mean and divides by standard deviation."""
     w = w - jnp.mean(w, axis=axis)
-    w = w / (jnp.std(w, axis=axis) + eps)
-    return w
+    return w / (jnp.std(w, axis=axis) + eps)
 
 
 class StdConv(nn.Conv):
@@ -80,11 +74,7 @@ class SmallStem(nn.Module):
     @nn.compact
     def __call__(self, obs, goal: Optional[jax.Array], train: bool = True):
         # Determine whether or not we concatenate
-        if goal is None:
-            x = obs
-        else:
-            # Obs is shape (B, T, H, W, C), Goal is shape (B, 1, H, W, C)
-            x = jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)  # Concat on channel axis
+        x = obs if goal is None else jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)
 
         # Shift inputs to -1 to 1 from 0 to 1
         x = 2 * x - 1
@@ -114,9 +104,8 @@ class SmallStem(nn.Module):
             name="embedding",
         )(x)
 
-        B, T, H, W, C = x.shape
-        x = jnp.reshape(x, [B, T, H * W, C])  # (B, T, Num Tokens, C)
-        return x
+        b, t, h, w, c = x.shape
+        return jnp.reshape(x, [b, t, h * w, c])  # (B, T, Num Tokens, C)
 
 
 class PositionalEmbedding(nn.Module):
@@ -124,8 +113,8 @@ class PositionalEmbedding(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        T, D = x.shape[-2:]  # Get (T, D)
-        emb = self.param("positional_embedding", nn.initializers.normal(stddev=0.02), (1, T, D), self.dtype)
+        t, d = x.shape[-2:]  # Get (T, D)
+        emb = self.param("positional_embedding", nn.initializers.normal(stddev=0.02), (1, t, d), self.dtype)
         return x + emb
 
 
@@ -143,12 +132,11 @@ class MlpBlock(nn.Module):
             kernel_init=nn.initializers.xavier_uniform(),
             bias_init=nn.initializers.normal(stddev=1e-6),
         )
-        D = x.shape[-1]
-        x = nn.Dense(self.mlp_dim or 4 * D, dtype=self.dtype, **inits)(x)
+        d = x.shape[-1]
+        x = nn.Dense(self.mlp_dim or 4 * d, dtype=self.dtype, **inits)(x)
         x = nn.gelu(x)
         x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
-        x = nn.Dense(D, dtype=self.dtype, **inits)(x)
-        return x
+        return nn.Dense(d, dtype=self.dtype, **inits)(x)
 
 
 class EncoderBlock(nn.Module):
@@ -183,8 +171,7 @@ class EncoderBlock(nn.Module):
             dtype=self.dtype,
         )(y, train=train)
         y = nn.Dropout(rate=self.dropout_rate)(y, deterministic=not train)
-        x = x + y
-        return x
+        return x + y
 
 
 class TransformerEncoder(nn.Module):
@@ -220,9 +207,9 @@ class MAPHead(nn.Module):
     @nn.compact
     def __call__(self, x, train: bool = True):
         # TODO
-        B, L, D = x.shape  # pylint: disable=unused-variable
-        probe = self.param("probe", nn.initializers.xavier_uniform(), (1, 1, D), x.dtype)
-        probe = jnp.tile(probe, [B, 1, 1])
+        b, _, d = x.shape  # pylint: disable=unused-variable
+        probe = self.param("probe", nn.initializers.xavier_uniform(), (1, 1, d), x.dtype)
+        probe = jnp.tile(probe, [b, 1, 1])
 
         x = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())(
             probe, x
@@ -255,8 +242,8 @@ class ViT(nn.Module):
 
         x = jnp.concatenate([modalities[k] for k in sorted(modalities.keys())], axis=-2)
         # Then, flatten the time dimension
-        B, T, N, _ = x.shape  # (Batch, Time, Num Tokens, Dim)
-        x = jnp.reshape(x, (B, T * N, self.embed_dim))
+        b, t, n, _ = x.shape  # (Batch, Time, Num Tokens, Dim)
+        x = jnp.reshape(x, (b, t * n, self.embed_dim))
 
         # Add positional embedding
         x = PositionalEmbedding(dtype=self.dtype)(x)
@@ -268,12 +255,12 @@ class ViT(nn.Module):
                 (1, self.num_registers, self.embed_dim),
                 self.dtype,
             )
-            x = jnp.concatenate((x, jnp.tile(registers, [B, 1, 1])), axis=1)  # Registers at the end
+            x = jnp.concatenate((x, jnp.tile(registers, [b, 1, 1])), axis=1)  # Registers at the end
         x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)  # Don't dropout CLS token.
 
         if self.pool_type == "cls":
             cls_token = self.param("cls", nn.initializers.zeros, (1, 1, self.embed_dim), x.dtype)
-            x = jnp.concatenate((jnp.tile(cls_token, [B, 1, 1]), x), axis=1)  # CLS at the beginning
+            x = jnp.concatenate((jnp.tile(cls_token, [b, 1, 1]), x), axis=1)  # CLS at the beginning
 
         # Run the transformer
         x = TransformerEncoder(
@@ -289,16 +276,16 @@ class ViT(nn.Module):
         if self.pool_type == "cls":
             x = x[:, 0]  # (B, D)
         elif self.pool_type == "avg":
-            x = jnp.mean(x[:, : T * N], axis=1)  # Ignore registers
+            x = jnp.mean(x[:, : t * n], axis=1)  # Ignore registers
         elif self.pool_type == "map":
-            x = MAPHead(num_heads=self.num_heads, mlp_dim=self.mlp_dim)(x[:, : T * N])  # Ignore registers
+            x = MAPHead(num_heads=self.num_heads, mlp_dim=self.mlp_dim)(x[:, : t * n])  # Ignore registers
         else:
             raise ValueError(f"Unknown pool type: '{self.pool_type}'")
 
         return x
 
 
-class ViT_T(ViT):
+class ViTT(ViT):
     embed_dim: int = 192
     num_layers: int = 12
     mlp_dim: int = 768
@@ -307,7 +294,7 @@ class ViT_T(ViT):
     dropout_rate: float = 0.0
 
 
-class ViT_S(ViT):
+class ViTS(ViT):
     embed_dim: int = 384
     num_layers: int = 12
     mlp_dim: int = 1536
@@ -316,7 +303,7 @@ class ViT_S(ViT):
     dropout_rate: float = 0.0
 
 
-class ViT_B(ViT):
+class ViTB(ViT):
     embed_dim: int = 768
     num_layers: int = 12
     mlp_dim: int = 3072

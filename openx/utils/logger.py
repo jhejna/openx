@@ -46,8 +46,8 @@ class TensorBoardWriter(Writer):
         self.writer = tensorboard.SummaryWriter(self.path)
 
     def _dump(self, step):
-        for k in self.values.keys():
-            self.writer.add_scalar(k, self.values[k], step)
+        for k, v in self.values.items():
+            self.writer.add_scalar(k, v, step)
         self.writer.flush()
         self.values.clear()
 

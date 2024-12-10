@@ -73,8 +73,7 @@ def _check_standard_format(dataset: tf.data.Dataset):
 def filter_by_structure(tree, structure):
     if isinstance(structure, dict):
         return {k: filter_by_structure(tree[k], v) for k, v in structure.items()}
-    else:
-        return tree  # otherwise return the item from the tree (episode)
+    return tree  # otherwise return the item from the tree (episode)
 
 
 def filter_dataset_statistics_by_structure(dataset_statistics, structure):
@@ -108,10 +107,7 @@ def _standardize_structure(ep, structure):
 
 
 def _add_metadata(ep_idx: tf.Tensor, ep: Dict[str, Any]):
-    if "steps" in ep:
-        steps = ep.pop("steps")
-    else:
-        steps = ep
+    steps = ep.pop("steps") if "steps" in ep else ep
     assert "is_first" in steps
     assert "is_last" in steps
 
@@ -296,8 +292,7 @@ def standardize_dataset(
     def _standardize_state_action(ep: Dict):
         if dataset_statistics is not None:
             ep = normalize(ep, structure, dataset_statistics)
-        ep = concatenate(ep)
-        return ep
+        return concatenate(ep)
 
     dataset = dataset.map(_standardize_state_action, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
 
@@ -313,21 +308,17 @@ def standardize_dataset(
         for transform in transforms if transforms is not None else []:
             ep = transform(ep)
         # Cut the last time step after chunking
-        ep = tf.nest.map_structure(lambda x: x[:-1], ep)
-        return ep
+        return tf.nest.map_structure(lambda x: x[:-1], ep)
 
-    dataset = dataset.map(_standardize_time, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
-
-    return dataset
+    return dataset.map(_standardize_time, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
 
 
 def flatten_dataset(dataset, num_parallel_calls: int = tf.data.AUTOTUNE, shuffle: bool = True):
     if not shuffle:
         return dataset.flat_map(tf.data.Dataset.from_tensor_slices)
-    else:
-        return dataset.interleave(
-            lambda ep: tf.data.Dataset.from_tensor_slices(ep),
-            cycle_length=num_parallel_calls,
-            num_parallel_calls=num_parallel_calls,
-            deterministic=not shuffle,
-        )
+    return dataset.interleave(
+        lambda ep: tf.data.Dataset.from_tensor_slices(ep),
+        cycle_length=num_parallel_calls,
+        num_parallel_calls=num_parallel_calls,
+        deterministic=not shuffle,
+    )

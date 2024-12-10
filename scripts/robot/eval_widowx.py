@@ -95,8 +95,7 @@ def main(_):
         batch = dict(observation=obs, goal=goal)
         batch = jax.tree_util.tree_map(lambda x: x[None], batch)
         action = model.apply(params, batch, rngs=dict(dropout=rng), train=False, method=model.predict)
-        action = jax.tree_util.tree_map(lambda x: x[0], action)
-        return action
+        return jax.tree_util.tree_map(lambda x: x[0], action)
 
     ### Setup Eval Envs ###
     structure = config.structure.to_dict()

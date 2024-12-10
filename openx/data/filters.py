@@ -8,5 +8,4 @@ def filter_by_ep_path(ep, search_strings, path_key: str = "file_path"):
             [tf.strings.regex_full_match(string, pattern=".*" + s + ".*") for s in search_strings], axis=0
         )
         return tf.math.reduce_all(bool_tensor)
-    else:
-        return tf.strings.regex_full_match(string, pattern=".*" + search_strings + ".*")
+    return tf.strings.regex_full_match(string, pattern=".*" + search_strings + ".*")

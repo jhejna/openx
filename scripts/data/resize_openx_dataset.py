@@ -28,11 +28,8 @@ def is_depth_feature(name, feature):
 
 
 def is_image_feature(feature):
-    if len(feature.shape) != 2 and len(feature.shape) != 3:
-        return False
-    if feature.shape[0] < 64 or feature.shape[1] < 64:
-        return False
-    return True
+    # TODO(jhejna): This has not been checked.
+    return isinstance(feature, tfds.features.Image)
 
 
 def preprocess_features(features: tfds.features.FeaturesDict) -> tfds.features.FeaturesDict:
@@ -68,10 +65,10 @@ def preprocess_features(features: tfds.features.FeaturesDict) -> tfds.features.F
             "steps": tfds.features.Dataset(
                 {
                     "observation": tfds.features.FeaturesDict(obs_features),
-                    **{k: features["steps"][k] for k in features["steps"].keys() if k != "observation"},
+                    **{k: features["steps"][k] for k in features["steps"] if k != "observation"},
                 }
             ),
-            **{k: features[k] for k in features.keys() if k != "steps"},
+            **{k: features[k] for k in features if k != "steps"},
         }
     )
 

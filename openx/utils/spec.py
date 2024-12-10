@@ -85,12 +85,11 @@ class ModuleSpec(TypedDict):
 def _infer_full_name(o: object):
     if hasattr(o, "__module__") and hasattr(o, "__name__"):
         return o.__module__, o.__name__
-    else:
-        raise ValueError(
-            f"Could not infer identifier for {o}. "
-            "Please pass in a fully qualified import string instead "
-            "e.g. 'octo.model.components.transformer:Transformer'"
-        )
+    raise ValueError(
+        f"Could not infer identifier for {o}. "
+        "Please pass in a fully qualified import string instead "
+        "e.g. 'octo.model.components.transformer:Transformer'"
+    )
 
 
 def _import_from_string(module_string: str, name: str):
@@ -124,9 +123,8 @@ def recursively_instantiate(obj: Any):
             kwargs=recursively_instantiate(obj["kwargs"]),
         )
         return ModuleSpec.instantiate(spec)()
-    elif isinstance(obj, dict):
+    if isinstance(obj, dict):
         return {k: recursively_instantiate(v) for k, v in obj.items()}
-    elif isinstance(obj, (tuple, list)):
+    if isinstance(obj, (tuple, list)):
         return type(obj)(map(recursively_instantiate, obj))
-    else:
-        return obj
+    return obj

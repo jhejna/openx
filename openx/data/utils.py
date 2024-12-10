@@ -51,8 +51,7 @@ class DataType(StrEnum):
 def rmat_to_rot6d(rmat: tf.Tensor) -> tf.Tensor:
     r6 = rmat[..., :2, :]
     r6_0, r6_1 = r6[..., 0, :], r6[..., 1, :]
-    r6_flat = tf.concat([r6_0, r6_1], axis=-1)
-    return r6_flat
+    return tf.concat([r6_0, r6_1], axis=-1)
 
 
 def binarize_gripper_actions(gripper_actions: tf.Tensor) -> tf.Tensor:
@@ -72,8 +71,7 @@ def binarize_gripper_actions(gripper_actions: tf.Tensor) -> tf.Tensor:
             lambda: is_closed_float[i],  # If we are not in between, return 1 if closed.
         )
 
-    new_gripper_actions = tf.scan(scan_fn, tf.range(tf.shape(gripper_actions)[0]), is_closed_float[-1], reverse=True)
-    return new_gripper_actions
+    return tf.scan(scan_fn, tf.range(tf.shape(gripper_actions)[0]), is_closed_float[-1], reverse=True)
 
 
 def rel2abs_gripper_actions(
@@ -110,8 +108,7 @@ def rel2abs_gripper_actions(
 
     # Resulting actions are -1 to 1.
     new_actions = tf.scan(scan_fn, tf.range(tf.shape(actions)[0]), start)
-    new_actions = tf.cast(new_actions, tf.float32) / 2 + 0.5
-    return new_actions
+    return tf.cast(new_actions, tf.float32) / 2 + 0.5
 
 
 def gripper_state_from_width(gripper_state: tf.Tensor, max_width: float = 0.079):

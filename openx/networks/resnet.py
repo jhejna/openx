@@ -140,13 +140,8 @@ class ResNet(nn.Module):
         )
         act = getattr(jax.nn, self.act)
 
-        # Determine whether or not we concatenate
-        if goal is None:
-            x = obs
-        else:
-            # Obs is shape (B, T, H, W, C), Goal is shape (B, 1, H, W, C)
-            x = jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)  # Concat on channel axis
-
+        # Obs is shape (B, T, H, W, C), Goal is shape (B, 1, H, W, C)
+        x = obs if goal is None else jnp.concatenate((obs, jnp.broadcast_to(goal, obs.shape)), axis=-1)
         # Shift inputs to -1 to 1 from 0 to 1
         x = 2 * x - 1
 
@@ -177,9 +172,8 @@ class ResNet(nn.Module):
 
         if self.num_kp is not None:
             return SpatialSoftmax(num_kp=self.num_kp)(x)
-        else:
-            # Perform average pooling over the enbmeddings.
-            return jnp.mean(x, axis=(-3, -2))  # (..., H, W, C) -> (B, T, C).
+        # Perform average pooling over the enbmeddings.
+        return jnp.mean(x, axis=(-3, -2))  # (..., H, W, C) -> (B, T, C).
 
 
 class ResNet18(ResNet):

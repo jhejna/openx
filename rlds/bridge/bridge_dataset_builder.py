@@ -79,9 +79,7 @@ def process_images(path):  # processes images at a trajectory level
     filenames = [[path.split("/")[-1] for path in x] for x in image_paths]
     assert all(x == filenames[0] for x in filenames), (path, filenames)
 
-    d = {image_dir: [read_image(path) for path in p] for image_dir, p in zip(image_dirs, image_paths, strict=False)}
-
-    return d
+    return {image_dir: [read_image(path) for path in p] for image_dir, p in zip(image_dirs, image_paths, strict=False)}
 
 
 def process_depth(path):
@@ -92,8 +90,7 @@ def process_depth(path):
             key=lambda x: int(x.split("_")[-1].split(".")[0]),
         )
         return [read_depth(path) for path in image_paths]
-    else:
-        return None
+    return None
 
 
 def process_state(path):
@@ -270,10 +267,7 @@ class Bridge(tfds.core.GeneratorBasedBuilder):
                 new_key = "image_3"
             elif camera_topics[image_idx] in OTHER_TOPCIS:
                 # other cams can be either image_1 or image_2
-                if "image_1" in list(orig_to_new.values()):
-                    new_key = "image_2"
-                else:
-                    new_key = "image_1"
+                new_key = "image_2" if "image_1" in list(orig_to_new.values()) else "image_1"
             else:
                 raise ValueError(f"Unexpected camera topic {camera_topics[image_idx]}")
 

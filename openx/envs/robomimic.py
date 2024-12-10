@@ -68,7 +68,7 @@ class RobomimicEnv(gym.Env):
         )
 
     def _format_obs(self, obs):
-        obs = dict(
+        return dict(
             image=dict(agent=np.flip(obs["agentview_image"], 0), wrist=np.flip(obs["robot0_eye_in_hand_image"], 0)),
             state={
                 StateEncoding.EE_POS: obs["robot0_eef_pos"],
@@ -79,7 +79,6 @@ class RobomimicEnv(gym.Env):
                 StateEncoding.MISC: obs["object-state"],
             },
         )
-        return obs
 
     def step(self, action: Dict):
         # For now only allow control via the specific action space we care about.

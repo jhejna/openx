@@ -98,17 +98,17 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
         Define filepaths for data splits.
         Modify this at each call.
         """
-        PATH = "path/to/robomimic/dataset"
-        LANGUAGE_INSTRUCTION = "Put the square peg on the round hole."
+        path = "path/to/robomimic/dataset"
+        language_instruction = "Put the square peg on the round hole."
         return {
             "train": self._generate_examples(
-                path=PATH,
-                language_instruction=LANGUAGE_INSTRUCTION,
+                path=path,
+                language_instruction=language_instruction,
                 train=True,
             ),
             "val": self._generate_examples(
-                path=PATH,
-                language_instruction=LANGUAGE_INSTRUCTION,
+                path=path,
+                language_instruction=language_instruction,
                 train=False,
             ),
         }

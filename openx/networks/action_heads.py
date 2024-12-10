@@ -29,8 +29,7 @@ class L2ActionHead(ActionHead):
         # Handles whether or not the model predicts time.
         pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
         x = nn.Dense(pred_dim, kernel_init=nn.initializers.xavier_uniform())(x)
-        x = x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
-        return x
+        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
 
     def predict(self, obs: jax.Array, train: bool = True):
         return self(obs, train=train)
@@ -52,6 +51,8 @@ class DiscreteActionHead(ActionHead):
         elif self.bin_type == "gaussian":
             # Values chosen to approximate -5 to 5
             self.bins = jax.scipy.stats.norm.ppf(jnp.linspace(5e-3, 1 - 5e-3, self.n_action_bins + 1), scale=2)
+        else:
+            raise ValueError("Invalid bin type provided")
         self.bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
 
     @nn.compact
@@ -59,8 +60,7 @@ class DiscreteActionHead(ActionHead):
         x = self.model(obs, train=train)
         pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
         x = nn.Dense(pred_dim * self.n_action_bins, kernel_init=nn.initializers.xavier_uniform())(x)
-        x = x.reshape((obs.shape[0], self.action_horizon, self.action_dim, self.n_action_bins))
-        return x
+        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim, self.n_action_bins))
 
     def predict(self, obs: jax.Array, train: bool = True):
         logits = self(obs, train=train)
@@ -77,10 +77,7 @@ class DiscreteActionHead(ActionHead):
         logits = self(obs, train=train)  # (B, T, D, N)
 
         # Clip the actions to be in range
-        if self.bin_type == "uniform":
-            action = jnp.clip(action, -1, 1)
-        else:
-            action = jnp.clip(action, -5, 5)
+        action = jnp.clip(action, -1, 1) if self.bin_type == "uniform" else jnp.clip(action, -5, 5)
 
         # Compute the binned actions
         action = action[..., None]  # (B, T, D, 1)
@@ -125,8 +122,7 @@ class DDPMActionHead(ActionHead):
         # Handles whether or not the model predicts time.
         pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
         x = nn.Dense(pred_dim)(x)
-        x = x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
-        return x
+        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
 
     def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
         # handle rng creation
