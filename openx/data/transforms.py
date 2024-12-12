@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import tensorflow as tf
 
@@ -23,7 +23,7 @@ def _observation_transform(transform):
     return fn
 
 
-def chunk(ep: Dict, n_obs: int, n_action: int, chunk_img: bool = True, mask_keys=("state",)):
+def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = None):
     """
     Chunk an episode into observation and action pairs.
     Sequences are done as:
@@ -54,23 +54,14 @@ def chunk(ep: Dict, n_obs: int, n_action: int, chunk_img: bool = True, mask_keys
     action_idx = tf.minimum(action_idx, ep_len - 1)  # mask the actual indexes to not go over.
     ep["mask"] = mask
 
-    # Apply indexing
-    if chunk_img:
-        ep["observation"] = tf.nest.map_structure(lambda x: tf.gather(x, obs_idx), ep["observation"])
-        history_mask = tf.constant([False] * (n_obs - 1) + [True])
-        for mask_key in mask_keys:
-            if mask_key in ep["observation"]:
-                ep["observation"][mask_key] = tf.nest.map_structure(
-                    lambda x: x * tf.reshape(tf.cast(history_mask, x.dtype), (1, -1) + (1,) * (x.ndim - 2)),
-                    ep["observation"][mask_key],
-                )
-    else:
-        if "state" in ep["observation"]:
-            ep["observation"]["state"] = tf.gather(ep["observation"]["state"], obs_idx)
-        if "image" in ep["observation"]:
-            ep["observation"]["image"] = tf.nest.map_structure(
-                lambda x: tf.expand_dims(x, axis=0), ep["observation"]["image"]
-            )
+    # Apply observation indexing
+    if obs_keys is None:
+        obs_keys = set(ep["observation"].keys())
+    for k in ep["observation"]:
+        if k in obs_keys:
+            ep["observation"][k] = tf.nest.map_structure(lambda x: tf.gather(x, obs_idx), ep["observation"][k])
+        else:
+            ep["observation"][k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), ep["observation"][k])
     ep["action"] = tf.gather(ep["action"], action_idx)
     return ep
 

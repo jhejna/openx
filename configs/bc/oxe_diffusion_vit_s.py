@@ -9,7 +9,7 @@ from openx.data.utils import NormalizationType, StateEncoding
 from openx.networks.action_heads import DDPMActionHead
 from openx.networks.core import Model
 from openx.networks.mlp import MLPResNet
-from openx.networks.vit import SmallStem, ViT_S
+from openx.networks.vit import SmallStem, ViTS
 from openx.utils.schedules import warmup_rsqrt_schedule
 from openx.utils.spec import ModuleSpec
 
@@ -82,7 +82,7 @@ def get_config(config_str: str = "magic_soup,size"):
         encoders={
             "observation->image->agent,goal->image->agent": ModuleSpec.create(SmallStem, embed_dim=384, patch_size=16),
         },
-        trunk=ModuleSpec.create(ViT_S),
+        trunk=ModuleSpec.create(ViTS),
         action_head=ModuleSpec.create(
             DDPMActionHead,
             model=ModuleSpec.create(

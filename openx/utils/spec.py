@@ -1,6 +1,6 @@
 import importlib
 from functools import partial
-from typing import Any, Dict, Tuple, TypedDict, Union
+from typing import Any, Dict, Optional, Tuple, TypedDict, Union
 
 
 class ModuleSpec(TypedDict):
@@ -59,7 +59,9 @@ class ModuleSpec(TypedDict):
         return ModuleSpec(module=module, name=name, args=args, kwargs=kwargs)
 
     @staticmethod
-    def instantiate(spec: "ModuleSpec"):  # type: ignore
+    def instantiate(spec: Optional["ModuleSpec"]):  # type: ignore
+        if spec is None:
+            return None
         if set(spec.keys()) != {"module", "name", "args", "kwargs"}:
             raise ValueError(
                 f"Expected ModuleSpec, but got {spec}. "

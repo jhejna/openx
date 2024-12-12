@@ -1,12 +1,12 @@
+import hashlib
 import json
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from .transforms import chunk, concatenate, normalize, uniform_goal_relabeling
+from .transforms import normalize
 from .utils import DataType, NormalizationType, StateEncoding
 
 """
@@ -38,8 +38,6 @@ Afterwards, we will pad the dataset to match the same thing:
     "language_instruction" : "Instruction",
     "is_first": np.ndarray,
     "is_last": np.ndarray,
-    "ep_idx": np.ndarray,
-    "step_idx": np.ndarray,
     "ep_len": np.ndarray,
     "dataset_id": np.ndarray,
     "robot_id":
@@ -63,13 +61,6 @@ STANDARD_STRUCTURE = {
 }
 
 
-def _check_standard_format(dataset: tf.data.Dataset):
-    element_spec = dataset.element_spec
-    # TODO: implement more checks
-    assert "observation" in element_spec
-    assert "action" in element_spec
-
-
 def filter_by_structure(tree, structure):
     if isinstance(structure, dict):
         return {k: filter_by_structure(tree[k], v) for k, v in structure.items()}
@@ -88,57 +79,28 @@ def filter_dataset_statistics_by_structure(dataset_statistics, structure):
     return dataset_statistics
 
 
-def _standardize_structure(ep, structure):
-    assert "language_instruction" not in structure, "Language currently not supported."
-    ep = filter_by_structure(ep, structure)  # Filter down to the keys in structure
-
-    # Randomly subsample images.
-    if "observation" in structure and "image" in structure["observation"]:
-        multi_image_keys = []
-        for k in structure["observation"]["image"]:
-            if isinstance(ep["observation"]["image"][k], list):
-                multi_image_keys.append(k)
-        # Go back and edit these keys to be random
-        for k in multi_image_keys:
-            imgs = ep["observation"]["image"][k]
-            ep["observation"]["image"][k] = imgs[tf.random.uniform((), minval=0, maxval=len(imgs))]
-
-    return ep
-
-
-def _add_metadata(ep_idx: tf.Tensor, ep: Dict[str, Any]):
-    steps = ep.pop("steps") if "steps" in ep else ep
-    assert "is_first" in steps
-    assert "is_last" in steps
-
-    if "ep_len" not in steps:
-        ep_len = tf.shape(steps["is_first"])[0]
-        steps["ep_len"] = tf.repeat(ep_len, ep_len)
-    else:
-        ep_len = steps["ep_len"][0]
-    if "ep_idx" not in steps:
-        steps["ep_idx"] = tf.repeat(ep_idx, ep_len)
-    if "step_idx" not in steps:
-        steps["step_idx"] = tf.range(ep_len, dtype=tf.int64)
-
-    # Could optionally broadcast the episode metadata, but for now we don't need it.
-    if "episode_metadata" in ep:
-        metadata = tf.nest.map_structure(lambda x: tf.repeat(x, ep_len), ep["episode_metadata"])
-        steps["episode_metadata"] = metadata
-    return steps
-
-
 def load_dataset(
-    path: str,
+    path: str | List[str],
     split: str,
     standardization_transform: Callable,
+    structure: Optional[dict] = None,
+    dataset_statistics: Optional[str] = None,
+    recompute_statistics: bool = False,
     num_parallel_reads: Optional[int] = tf.data.AUTOTUNE,
     num_parallel_calls: Optional[int] = tf.data.AUTOTUNE,
     shuffle: bool = True,
     filter_fn: Optional[Callable] = None,  # filter functions operate on the RAW dataset pre standardization
     minimum_length: int = 3,
 ):
-    builder = tfds.builder_from_directory(builder_dir=path)
+    """
+    This function loads a dataset from a path and standardizes it.
+
+    If you pass in a structure, it garuntees that the resulting dataset will follow that exact structure.
+    """
+    if isinstance(path, list):
+        builder = tfds.builder_from_directories(builder_dir=path)
+    else:
+        builder = tfds.builder_from_directory(builder_dir=path)
     dataset = builder.as_dataset(
         split=split,
         decoders=dict(steps=tfds.decode.SkipDecoding()),
@@ -147,6 +109,7 @@ def load_dataset(
             skip_prefetch=True,
             num_parallel_calls_for_interleave_files=num_parallel_reads,
             interleave_cycle_length=num_parallel_reads,
+            shuffle_reshuffle_each_iteration=shuffle,
         ),
     )
     options = tf.data.Options()
@@ -161,32 +124,100 @@ def load_dataset(
     # filter the dataset according to the filter function BEFORE we do anything else.
     if filter_fn is not None:
         dataset = dataset.filter(filter_fn)
-    dataset = dataset.enumerate().map(_add_metadata)  # Do not parallelize the metadata call
-    dataset = dataset.map(standardization_transform, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
-    dataset = dataset.filter(lambda ep: ep["ep_len"][0] >= minimum_length)  # Use metadata to filter length
-    _check_standard_format(dataset)
+
+    def _standardize(ep):
+        # Merge multiple tf operations to allow for graph optimization.
+        # Calling metadata, standardization, and structure lets us eliminate calls note used by the final ds.
+
+        steps = ep.pop("steps")
+        assert "is_first" in steps
+        assert "is_last" in steps
+        ep_len = tf.shape(steps["is_first"])[0]
+
+        # Broadcast metadata
+        if "episode_metadata" in ep:
+            metadata = tf.nest.map_structure(lambda x: tf.repeat(x, ep_len), ep["episode_metadata"])
+            steps["episode_metadata"] = metadata
+
+        steps = standardization_transform(steps)  # Standardize the episode
+
+        if structure is not None:
+            steps = filter_by_structure(steps, structure)  # Filter down to the keys in structure
+            state_keys = tf.nest.flatten(structure["observation"]["state"])
+            action_keys = tf.nest.flatten(structure["action"])
+            # Then normalize the dataset to adhere to the structure
+            if any(norm_type != NormalizationType.NONE for norm_type in state_keys + action_keys):
+                if dataset_statistics is None:
+                    dataset_statistics = compute_dataset_statistics(
+                        path, standardization_transform, recompute_statistics=recompute_statistics
+                    )
+                else:
+                    dataset_statistics = load_dataset_statistics(dataset_statistics)
+                dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
+                steps = normalize(steps, structure, dataset_statistics)
+
+        # Reduce image keys to a single image if multiple are present.
+        if "observation" in steps and "image" in steps["observation"]:
+            multi_image_keys = []
+            for k in steps["observation"]["image"]:
+                if isinstance(steps["observation"]["image"][k], list):
+                    multi_image_keys.append(k)
+            for k in multi_image_keys:
+                imgs = steps["observation"]["image"][k]
+                steps["observation"]["image"][k] = imgs[tf.random.uniform((), minval=0, maxval=len(imgs))]
+
+        return steps
+
+    dataset = dataset.map(_standardize, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
+    # Filter out episodes that are too short.
+    dataset = dataset.filter(lambda ep: tf.shape(tf.nest.flatten(ep["action"])[0])[0] >= minimum_length)
+
+    # Checks on formatting.
+    element_spec = dataset.element_spec
+    assert "observation" in element_spec
+    assert "action" in element_spec
+    observation_types = [("observation", v) for v in ["state"]]
+    action_types = [("action", v) for v in ["desired_delta", "desired_absolute", "achieved_delta", "achieved_absolute"]]
+
+    for k, kk in observation_types + action_types:
+        for state_encoding, normalization_type in element_spec[k].get(kk, {}).items():
+            assert state_encoding in StateEncoding
+            assert normalization_type in NormalizationType
+
     return dataset
 
 
+def load_dataset_statistics(path):
+    if not path.endswith("dataset_statistics.json"):
+        path = tf.io.gfile.join(path, "dataset_statistics.json")
+    with tf.io.gfile.GFile(path, "r") as f:
+        dataset_statistics = json.load(f)
+
+    # Convert everything to numpy
+    def _convert_to_numpy(x):
+        return {k: _convert_to_numpy(v) if isinstance(v, dict) else np.array(v, dtype=np.float32) for k, v in x.items()}
+
+    return _convert_to_numpy(dataset_statistics)
+
+
 def compute_dataset_statistics(
-    path, standardization_transform: Callable, recompute_statistics: bool = False, save_statistics: bool = True
+    path: str | List[str],
+    standardization_transform: Callable,
+    recompute_statistics: bool = False,
+    save_statistics: bool = True,
 ):
+    # Compute some hash of the path and other factors to determine the path.
+    hash_deps = tuple(path) if isinstance(path, list) else (path,)
+    hash_deps = sorted(hash_deps)
+    unique_hash = hashlib.sha256("".join(hash_deps).encode("utf-8"), usedforsecurity=False).hexdigest()
+
     # See if we need to compute the dataset statistics
-    dataset_statistics_path = tf.io.gfile.join(path, "dataset_statistics.json")
+    dataset_statistics_path = tf.io.gfile.join(hash_deps[0], f"dataset_statistics_{unique_hash}.json")
     if not recompute_statistics and tf.io.gfile.exists(dataset_statistics_path):
-        with tf.io.gfile.GFile(dataset_statistics_path, "r") as f:
-            dataset_statistics = json.load(f)
-
-        # Convert everything to numpy
-        def _convert_to_numpy(x):
-            return {
-                k: _convert_to_numpy(v) if isinstance(v, dict) else np.array(v, dtype=np.float32) for k, v in x.items()
-            }
-
-        dataset_statistics = _convert_to_numpy(dataset_statistics)
+        dataset_statistics = load_dataset_statistics(dataset_statistics_path)
     else:
         # Otherwise, load the dataset to compute the statistics, let tf data handle the parallelization
-        dataset = load_dataset(path, split="all", standardization_transform=standardization_transform)
+        dataset = load_dataset(path, split="all", standardization_transform=standardization_transform, structure=None)
         sa_elem_spec = dict(action=dataset.element_spec["action"], state=dataset.element_spec["observation"]["state"])
         initial_state = dict(
             num_steps=0,
@@ -260,65 +291,3 @@ def compute_dataset_statistics(
                 json.dump(list_dset_stats, f, default=float, indent=4)
 
     return dataset_statistics
-
-
-def standardize_dataset(
-    dataset,
-    structure,
-    dataset_statistics: Optional[Dict],
-    goal_conditioned: bool = False,
-    n_obs: int = 1,
-    n_action: int = 1,
-    chunk_img: bool = True,
-    shuffle: bool = True,
-    repeat: bool = True,
-    transforms: Optional[List] = None,
-    num_parallel_calls: int = tf.data.AUTOTUNE,
-):
-    """
-    This function standardizes the data, normalizes, concatenates, goal-conditions, chunks, and then applies transforms.
-    """
-    # First map away the unnecesary keys -- this reduces memory usage.
-    dataset = dataset.map(
-        partial(_standardize_structure, structure=structure),
-        num_parallel_calls=num_parallel_calls,
-        deterministic=not shuffle,
-    )
-
-    if dataset_statistics is not None:
-        dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
-
-    # Next normalize and concatenate
-    def _standardize_state_action(ep: Dict):
-        if dataset_statistics is not None:
-            ep = normalize(ep, structure, dataset_statistics)
-        return concatenate(ep)
-
-    dataset = dataset.map(_standardize_state_action, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
-
-    # Then, repeat the dataset. This ordering is important.
-    if repeat:
-        dataset = dataset.repeat()
-
-    # Finally, chunk the dataset and apply any final transformations
-    def _standardize_time(ep: Dict):
-        if goal_conditioned:
-            ep = uniform_goal_relabeling(ep)
-        ep = chunk(ep, n_obs=n_obs, n_action=n_action, chunk_img=chunk_img)
-        for transform in transforms if transforms is not None else []:
-            ep = transform(ep)
-        # Cut the last time step after chunking
-        return tf.nest.map_structure(lambda x: x[:-1], ep)
-
-    return dataset.map(_standardize_time, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
-
-
-def flatten_dataset(dataset, num_parallel_calls: int = tf.data.AUTOTUNE, shuffle: bool = True):
-    if not shuffle:
-        return dataset.flat_map(tf.data.Dataset.from_tensor_slices)
-    return dataset.interleave(
-        lambda ep: tf.data.Dataset.from_tensor_slices(ep),
-        cycle_length=num_parallel_calls,
-        num_parallel_calls=num_parallel_calls,
-        deterministic=not shuffle,
-    )
