@@ -207,6 +207,13 @@ OXE_ALL = dict(
         transform=ModuleSpec.create(oxe.robocook_dataset_transform),
         weight=104863,
     ),
+    nyu_door_opening_surprising_effectiveness=dict(
+        path="nyu_door_opening_surprising_effectiveness/0.1.0",
+        train_split="train[:95%]",
+        val_split="train[95%:]",
+        transform=ModuleSpec.create(oxe.nyu_door_opening_dataset_transform),
+        weight=16887,
+    ),
     # Remove because its currently causing NaNs
     # cmu_playfusion=dict(
     #     path="cmu_play_fusion/0.1.0",

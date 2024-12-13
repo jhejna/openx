@@ -1,5 +1,6 @@
 import pprint
 
+import tensorflow as tf
 from absl import app, flags
 from ml_collections import config_flags
 
@@ -17,6 +18,8 @@ A simple script for getting the exact size of the train split of datasets.
 def main(_):
     dataset_sizes = {}
     for dataset_name, config in FLAGS.config.dataloader.datasets.to_dict().items():
+        if not dataset_name.startswith("nyu"):
+            continue
         assert "path" in config and "transform" in config
         transform_fn = ModuleSpec.instantiate(config["transform"])
         filter_fn = ModuleSpec.instantiate(config["filter"]) if config.get("filter", None) is not None else None
@@ -24,9 +27,12 @@ def main(_):
 
         dataset = load_dataset(path, config["train_split"], standardization_transform=transform_fn, filter_fn=filter_fn)
 
-        num_ep, num_steps = dataset.reduce((0, 0), lambda state, ep: (state[0] + 1, state[1] + ep["ep_len"][0] - 1))
+        def _reduce_fn(state, ep):
+            ep_len = tf.shape(tf.nest.flatten(ep)[0])[0] - 1
+            return (state[0] + 1, state[1] + ep_len)
 
-        dataset_sizes[dataset_name] = dict(num_ep=num_ep, num_steps=num_steps)
+        num_ep, num_steps = dataset.reduce((0, 0), _reduce_fn)
+        dataset_sizes[dataset_name] = dict(num_ep=num_ep.numpy(), num_steps=num_steps.numpy())
 
     pprint.pprint(dataset_sizes)
 

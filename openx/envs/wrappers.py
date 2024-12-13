@@ -5,8 +5,8 @@ import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 
+from openx.data import transforms
 from openx.data.core import filter_by_structure, filter_dataset_statistics_by_structure
-from openx.data.transforms import _center_bbox, _normalize, _unnormalize
 
 
 def space_stack(space: gym.Space, repeat: int):
@@ -47,21 +47,17 @@ class HistoryWrapper(gym.Wrapper):
     are padding.
     """
 
-    def __init__(self, env: gym.Env, horizon: int, mask_keys: Tuple = ("state",)):
+    def __init__(self, env: gym.Env, horizon: int):
         super().__init__(env)
         self.horizon = horizon
         self.history = deque(maxlen=self.horizon)
         self.observation_space = space_stack(self.env.observation_space, self.horizon)
-        self.mask_keys = mask_keys
 
     def _get_obs(self):
         return tf.nest.map_structure(lambda *args: np.stack(args, dtype=args[0].dtype), *self.history)
 
     def step(self, action):
         obs, reward, done, trunc, info = self.env.step(action)
-        for mask_key in self.mask_keys:
-            if mask_key in self.history[-1]:
-                self.history[-1][mask_key][:] = 0
         self.history.append(obs)
         assert len(self.history) == self.horizon
         return self._get_obs(), reward, done, trunc, info
@@ -138,7 +134,7 @@ def _resize_images(obs: Dict, structure: Dict, scale_range: Optional[List] = Non
         output_image_obs = dict()
         for k, shape in structure["image"].items():
             imgs = obs["image"][k]
-            center_bbox = _center_bbox(imgs.shape, shape, scale_range=scale_range)
+            center_bbox = transforms._center_bbox(imgs.shape, shape, scale_range=scale_range)
             imgs = tf.image.crop_to_bounding_box(imgs, *center_bbox)
             # TODO: test adjusting the image jpeg qualtiy to account for dataset compression.
             # imgs = tf.stack([tf.image.adjust_jpeg_quality(img, 95) for img in tf.unstack(imgs, axis=0)], axis=0)
@@ -188,7 +184,7 @@ class NormalizationWrapper(gym.Wrapper):
         if "state" in obs:
             tf.nest.assert_same_structure(self.dataset_statistics["mean"]["state"], obs["state"])
             obs["state"] = tf.nest.map_structure(
-                _normalize,
+                transforms._normalize,
                 obs["state"],
                 self.structure["observation"]["state"],
                 self.dataset_statistics["mean"]["state"],
@@ -202,7 +198,7 @@ class NormalizationWrapper(gym.Wrapper):
         # Unnormalize the actions
         tf.nest.assert_same_structure(self.dataset_statistics["mean"]["action"], action)
         action = tf.nest.map_structure(
-            _unnormalize,
+            transforms._unnormalize,
             action,
             self.structure["action"],
             self.dataset_statistics["mean"]["action"],
@@ -315,7 +311,7 @@ def preprocess_goal(
         assert dataset_statistics is not None
         dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
         goal["state"] = tf.nest.map_structure(
-            _normalize,
+            transforms._normalize,
             goal["state"],
             structure["observation"]["state"],
             dataset_statistics["mean"]["state"],

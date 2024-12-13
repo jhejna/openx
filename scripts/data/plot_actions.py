@@ -60,7 +60,7 @@ def main(_):
         if normalization_type == NormalizationType.BOUNDS or NormalizationType.BOUNDS_5STDV:
             hist_range = [-1, 1]
         if normalization_type == NormalizationType.GAUSSIAN:
-            # Set it to 4 std dev
+            # Set it to 5 std dev
             hist_range = [-5, 5]
 
         bins = 128

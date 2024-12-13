@@ -13,7 +13,7 @@ VAL_PARALLEL_CALLS = 1
 
 
 def make_dataloader(
-    dataset_configs: Dict,
+    datasets: Dict,
     structure: Dict = STANDARD_STRUCTURE,
     n_obs: int = 1,
     n_action: int = 1,
@@ -23,11 +23,11 @@ def make_dataloader(
     shuffle_size: int = 10000,
     discard_fraction: float = 0.0,
     repeat: bool | int = True,
+    cache: bool = False,
     repeat_early: bool = False,
     recompute_statistics: bool = False,
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
-    num_batch_parallel_calls: Optional[int] = tf.data.AUTOTUNE,
     use_parallel_flatten: bool = True,
     split_for_jax: bool = True,
     restrict_memory: bool = False,
@@ -38,11 +38,16 @@ def make_dataloader(
     weights = dict()
     dataset_statistics = dict()
     # Parse out the repeat count
-    repeat_count = repeat if isinstance(repeat, int) else None
+    repeat_count = None if isinstance(repeat, bool) else repeat
     repeat = repeat if isinstance(repeat, bool) else True
 
+    # If Cache option is set, ensure valid parameters
+    if cache:
+        repeat_early = False
+        discard_fraction = 0.0
+
     # Loop through all datasets to construct dataloader
-    for ds_name, ds_config in dataset_configs.items():
+    for ds_name, ds_config in datasets.items():
         assert "path" in ds_config and "transform" in ds_config
         path = ds_config["path"]
         transform_fn = ModuleSpec.instantiate(ds_config["transform"])
@@ -103,16 +108,18 @@ def make_dataloader(
         ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
         idxs = tf.random.shuffle(tf.range(ep_len))
         if discard_fraction > 0:
-            num_to_keep = tf.maximum(tf.cast(ep_len * (1 - discard_fraction), tf.int32), 0)
+            num_to_keep = tf.maximum(tf.cast(ep_len, tf.float32) * (1 - discard_fraction), 0)
+            num_to_keep = tf.cast(num_to_keep, tf.int32)
             idxs = idxs[:num_to_keep]
         return tf.nest.map_structure(lambda x: tf.gather(x, idxs), ep)
 
     dataset_ids = sorted(list(set(list(train_datasets.keys()) + list(val_datasets.keys()))))
     dataset_ids = {k: v for v, k in enumerate(dataset_ids)}
+
     train_datasets = {
         k: v.map(
             functools.partial(_stepify, dataset_id=dataset_ids[k]),
-            num_parallel_calls=dataset_configs[k].get("num_parallel_calls", num_parallel_calls),
+            num_parallel_calls=datasets[k].get("num_parallel_calls", num_parallel_calls),
             deterministic=shuffle_size > 0,
         )
         for k, v in train_datasets.items()
@@ -137,9 +144,8 @@ def make_dataloader(
             )
         return ds.flat_map(tf.data.Dataset.from_tensor_slices)
 
-    # Then flatten the datasets
     train_datasets = {
-        k: _flatten_dataset(v, dataset_configs[k].get("num_parallel_calls", num_parallel_calls))
+        k: _flatten_dataset(v, datasets[k].get("num_parallel_calls", num_parallel_calls))
         for k, v in train_datasets.items()
     }
     val_datasets = {k: _flatten_dataset(v, VAL_PARALLEL_CALLS) for k, v in val_datasets.items()}
@@ -159,11 +165,14 @@ def make_dataloader(
         train_dataset = tf.data.Dataset.sample_from_datasets(
             [train_datasets[p] for p in order],
             weights=[weights[p] for p in order],
-            stop_on_empty_dataset=repeat,  # only stop if we are repeating.
-            rerandomize_each_iteration=True,
+            stop_on_empty_dataset=repeat and not cache,  # only stop if we are repeating.
+            rerandomize_each_iteration=shuffle_size > 0,
         )
     else:
         train_dataset = train_datasets[next(iter(train_datasets.keys()))]
+
+    if cache:
+        train_dataset = train_dataset.cache()
 
     # Shuffle the datasets
     if shuffle_size > 0:
@@ -198,7 +207,7 @@ def make_dataloader(
     }
 
     # Finally, batch the datasets
-    train_dataset = train_dataset.batch(batch_size, num_parallel_calls=num_batch_parallel_calls, drop_remainder=True)
+    train_dataset = train_dataset.batch(batch_size, num_parallel_calls=None, drop_remainder=True)
     val_datasets = {
         k: v.batch(batch_size, num_parallel_calls=None, drop_remainder=True) for k, v in val_datasets.items()
     }

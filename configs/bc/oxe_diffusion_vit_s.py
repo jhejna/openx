@@ -66,15 +66,14 @@ def get_config(config_str: str = "magic_soup,size"):
             saturation_range=[0.9, 1.1],
             hue=0.03,
         ),
-        chunk_img=True,
         goal_conditioned=True,
-        shuffle_size=500000,
+        shuffle_size=1000,
+        discard_fraction=0.5,
         batch_size=512,
         recompute_statistics=False,
-        weight_by_size=False,
         num_parallel_calls=128,
-        num_batch_parallel_calls=None,
-        restrict_memory=True,
+        restrict_memory=False,
+        repeat=True,
     )
 
     model = ModuleSpec.create(

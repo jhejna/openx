@@ -863,3 +863,24 @@ def rh20t_dataset_transform(ep: Dict[str, Any]) -> Dict[str, Any]:
     ep["action"] = action
     ep["robot"] = RobotType.UNKNOWN
     return ep
+
+
+def nyu_door_opening_dataset_transform(ep: Dict[str, Any]) -> Dict[str, Any]:
+    # make gripper action absolute action, +1 = open, 0 = close
+    gripper_action = ep["action"]["gripper_closedness_action"][:, 0]
+    gripper_action = rel2abs_gripper_actions(gripper_action)
+
+    action = {
+        "desired_delta": {
+            StateEncoding.EE_POS: ep["action"]["world_vector"],
+            StateEncoding.EE_EULER: ep["action"]["rotation_delta"],
+        },
+        "desired_absolute": {StateEncoding.GRIPPER: gripper_action},
+    }
+
+    observation = {"image": {"wrist": ep["observation"]["image"]}}
+
+    ep["observation"] = observation
+    ep["action"] = action
+    ep["robot"] = RobotType.UNKNOWN
+    return ep

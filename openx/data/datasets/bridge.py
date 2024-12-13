@@ -219,7 +219,8 @@ def bridge_dataset_transform(ep: Dict):
     string_key = tf.cond(dataset_name == "bridge_data_v2" or dataset_name == "rss", lambda: parts[5], lambda: parts[6])
     scene_id = FULL_DOMAIN_TABLE.lookup(string_key)
     scene_id_compressed = COMPRESSED_DOMAIN_TABLE.lookup(string_key)
-    ep_len = ep["ep_len"][0]
+
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
     ep["full_scene_id"] = tf.repeat(scene_id, ep_len)
     ep["compressed_scene_id"] = tf.repeat(scene_id_compressed, ep_len)
     ep["full_num_scenes"] = tf.repeat(32, ep_len)

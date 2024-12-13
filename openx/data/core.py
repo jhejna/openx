@@ -38,7 +38,6 @@ Afterwards, we will pad the dataset to match the same thing:
     "language_instruction" : "Instruction",
     "is_first": np.ndarray,
     "is_last": np.ndarray,
-    "ep_len": np.ndarray,
     "dataset_id": np.ndarray,
     "robot_id":
     "controller_hz":
@@ -125,6 +124,21 @@ def load_dataset(
     if filter_fn is not None:
         dataset = dataset.filter(filter_fn)
 
+    # Determine if we have dataset statistics
+    if structure is not None:
+        state_keys = tf.nest.flatten(structure["observation"].get("state", NormalizationType.NONE))
+        action_keys = tf.nest.flatten(structure["action"])
+        if any(norm_type != NormalizationType.NONE for norm_type in state_keys + action_keys):
+            if dataset_statistics is None:
+                dataset_statistics = compute_dataset_statistics(
+                    path, standardization_transform, recompute_statistics=recompute_statistics
+                )
+            else:
+                dataset_statistics = load_dataset_statistics(dataset_statistics)
+            dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
+        else:
+            dataset_statistics = None
+
     def _standardize(ep):
         # Merge multiple tf operations to allow for graph optimization.
         # Calling metadata, standardization, and structure lets us eliminate calls note used by the final ds.
@@ -143,17 +157,7 @@ def load_dataset(
 
         if structure is not None:
             steps = filter_by_structure(steps, structure)  # Filter down to the keys in structure
-            state_keys = tf.nest.flatten(structure["observation"]["state"])
-            action_keys = tf.nest.flatten(structure["action"])
-            # Then normalize the dataset to adhere to the structure
-            if any(norm_type != NormalizationType.NONE for norm_type in state_keys + action_keys):
-                if dataset_statistics is None:
-                    dataset_statistics = compute_dataset_statistics(
-                        path, standardization_transform, recompute_statistics=recompute_statistics
-                    )
-                else:
-                    dataset_statistics = load_dataset_statistics(dataset_statistics)
-                dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
+            if dataset_statistics is not None:
                 steps = normalize(steps, structure, dataset_statistics)
 
         # Reduce image keys to a single image if multiple are present.
@@ -172,23 +176,16 @@ def load_dataset(
     # Filter out episodes that are too short.
     dataset = dataset.filter(lambda ep: tf.shape(tf.nest.flatten(ep["action"])[0])[0] >= minimum_length)
 
-    # Checks on formatting.
+    # TODO(jhejna): expand checks.
     element_spec = dataset.element_spec
     assert "observation" in element_spec
     assert "action" in element_spec
-    observation_types = [("observation", v) for v in ["state"]]
-    action_types = [("action", v) for v in ["desired_delta", "desired_absolute", "achieved_delta", "achieved_absolute"]]
-
-    for k, kk in observation_types + action_types:
-        for state_encoding, normalization_type in element_spec[k].get(kk, {}).items():
-            assert state_encoding in StateEncoding
-            assert normalization_type in NormalizationType
 
     return dataset
 
 
 def load_dataset_statistics(path):
-    if not path.endswith("dataset_statistics.json"):
+    if not path.endswith(".json"):
         path = tf.io.gfile.join(path, "dataset_statistics.json")
     with tf.io.gfile.GFile(path, "r") as f:
         dataset_statistics = json.load(f)
