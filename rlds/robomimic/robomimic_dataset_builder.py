@@ -98,16 +98,24 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
         Define filepaths for data splits.
         Modify this at each call.
         """
-        path = "path/to/robomimic/dataset"
-        language_instruction = "Put the square peg on the round hole."
+        dataset_path = os.path.join(dl_manager.manual_dir, "image.hdf5")
+        if "square" in dataset_path:
+            language_instruction = "Put the square peg on the round hole."
+        elif "can" in dataset_path:
+            language_instruction = "Pick up the can and move it to the bin."
+        elif "lift" in dataset_path:
+            language_instruction = "Lift the block."
+        else:
+            raise ValueError("Unknown Task.")
+
         return {
             "train": self._generate_examples(
-                path=path,
+                path=dataset_path,
                 language_instruction=language_instruction,
                 train=True,
             ),
             "val": self._generate_examples(
-                path=path,
+                path=dataset_path,
                 language_instruction=language_instruction,
                 train=False,
             ),
@@ -179,9 +187,32 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                 language_instruction=language_instruction,
             )
             episode.append(terminal_step)
+            metadata = dict(ep_idx=int(demo.split("_")[-1]), file_path=os.path.join(path, demo))
 
-            sample = {"steps": episode, "episode_metadata": {"file_path": os.path.join(path, demo)}}
-            yield demo, sample
+            # Try to add a quality score.
+            if all(k in f["mask"] for k in ("better", "okay", "worse")):
+                demo_key = demo.encode("utf-8")
+                if demo_key in f["mask/better"]:
+                    metadata["quality_score"] = 3
+                elif demo_key in f["mask/okay"]:
+                    metadata["quality_score"] = 2
+                elif demo_key in f["mask/worse"]:
+                    metadata["quality_score"] = 1
+                else:
+                    raise ValueError("Episode was not in an quality mask.")
+
+            # Try to add the operator.
+            operator_keys = [
+                k for k in f["mask"] if "operator" in k and not k.endswith("train") and not k.endswith("valid")
+            ]
+            if len(operator_keys) > 0:
+                demo_key = demo.encode("utf-8")
+                for k in operator_keys:
+                    if demo_key in f["mask"][k]:
+                        metadata["operator"] = k
+                assert "operator" in metadata, "Operator was not found."
+
+            yield demo, dict(steps=episode, episode_metadata=metadata)
 
         # Finally close the file.
         f.close()

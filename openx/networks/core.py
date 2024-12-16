@@ -1,17 +1,15 @@
 from typing import Dict
 
 from flax import linen as nn
-from jax import numpy as jnp
 
 """
 Defines the core model
 """
 
 
-class Model(nn.Module):
+class MultiEncoder(nn.Module):
     encoders: Dict[str, nn.Module]
     trunk: nn.Module
-    action_head: nn.Module
 
     def _encode(self, batch: Dict, train: bool = True):
         # Support passing multiple modalities to a single encoder. Specify via tuple-key with `->`
@@ -34,37 +32,5 @@ class Model(nn.Module):
     def __call__(self, batch: Dict, train: bool = True):
         # Exists so we get full tracing with module.init
         # Should not be used for training.
-        obs = self._encode(batch, train=train)
-        obs = self.trunk(obs, train=train)
-        if self.is_initializing():
-            return self.action_head(obs, train=train)
-        return obs  # Return the encoded observation, keep action head separate.
-
-    def predict(self, batch: Dict, train: bool = True):
-        x = self(batch, train=train)
-        return self.action_head.predict(x, train=train)
-
-    def loss(self, batch: Dict, reduce: bool = True, train: bool = True):
-        x = self(batch, train=train)
-        loss = self.action_head.loss(x, batch["action"], train=train)
-        loss = loss * batch["mask"]
-        if reduce:
-            loss = jnp.mean(loss) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
-        else:
-            loss = jnp.mean(loss, axis=-1)
-        return loss
-
-    def loss_and_prediction_mse(self, batch: Dict, reduce: bool = True, train: bool = True):
-        x = self(batch, train=train)
-        loss = self.action_head.loss(x, batch["action"], train=train)
-        loss = loss * batch["mask"]
-        pred = self.action_head.predict(x, train=train)
-        mse = jnp.square(pred - batch["action"]).sum(axis=-1)  # (B, T, D) --> (B, T)
-        mse = mse * batch["mask"]
-        if reduce:
-            loss = jnp.mean(loss) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
-            mse = jnp.mean(mse) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
-        else:
-            loss = jnp.mean(loss, axis=-1)
-            mse = jnp.mean(mse, axis=-1)
-        return loss, mse
+        x = self._encode(batch, train=train)
+        return self.trunk(x, train=train)

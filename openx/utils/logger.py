@@ -10,6 +10,12 @@ import numpy as np
 import tensorboard
 import tensorflow as tf
 
+"""
+Generally taken from
+
+https://github.com/jhejna/research-lightning/blob/main/research/utils/logger.py
+"""
+
 try:
     import wandb
 
@@ -166,14 +172,16 @@ class Timer:
     """
 
     def __init__(self):
-        self._times = defaultdict(list)
+        self._times = defaultdict(float)
+        self._counts = defaultdict(int)
 
     @property
     def times(self):
-        return self._times
+        return {k: self._times[k] / self._counts[k] for k in self._times}
 
     def reset(self):
-        self._times = defaultdict(list)
+        self._times = defaultdict(float)
+        self._counts = defaultdict(int)
 
     @contextmanager
     def __call__(self, key: str):
@@ -181,4 +189,5 @@ class Timer:
         try:
             yield None
         finally:
-            self._times[key].append(time.time() - start_time)
+            self._times[key] += time.time() - start_time
+            self._counts[key] += 1

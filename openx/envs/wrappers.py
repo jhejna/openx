@@ -178,7 +178,7 @@ class NormalizationWrapper(gym.Wrapper):
     def __init__(self, env, structure, dataset_statistics):
         super().__init__(env)
         self.structure = structure
-        self.dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
+        self.dataset_statistics = dataset_statistics  # TODO(jhejna): verify this works now that we modded dset stats.
 
     def _normalize_obs(self, obs):
         if "state" in obs:

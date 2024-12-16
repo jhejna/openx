@@ -25,7 +25,8 @@ def eval_policy(
     while len(rewards) < num_ep:
         steps += 1
         rng = jax.random.fold_in(rng, steps)
-        action = predict(obs, rng=rng)
+        batch = dict(observation=obs)
+        action = predict(batch, rng=rng)
         action = np.asarray(action)  # Must convert away from jax tensor.
         obs, reward, done, trunc, info = env.step(action)
         ep_reward += reward
@@ -44,6 +45,4 @@ def eval_policy(
                 ep_length[i] = 0
                 ep_success[i] = False
 
-    eval_metrics = dict(reward=np.mean(rewards), success=np.mean(successes), length=np.mean(lengths))
-    print(eval_metrics)
-    return eval_metrics
+    return dict(reward=np.array(rewards), success=np.array(successes), length=np.array(lengths))

@@ -29,6 +29,7 @@ def make_dataloader(
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
     use_parallel_flatten: bool = True,
+    prefetch: int = 0,
     split_for_jax: bool = True,
     restrict_memory: bool = False,
 ):
@@ -49,46 +50,51 @@ def make_dataloader(
     # Loop through all datasets to construct dataloader
     for ds_name, ds_config in datasets.items():
         assert "path" in ds_config and "transform" in ds_config
+        assert "train_split" in ds_config or "val_split" in ds_config
         path = ds_config["path"]
         transform_fn = ModuleSpec.instantiate(ds_config["transform"])
         filter_fn = ModuleSpec.instantiate(ds_config.get("filter"))
-        dataset_statistics = ds_config.get("dataset_statistics")
+        dataset_statistics_path = ds_config.get("dataset_statistics")
 
         # Add train split
         if ds_config.get("train_split"):
             split = ds_config["train_split"]
             if split_for_jax:
                 split = tfds.split_for_jax_process(split)
-            train_datasets[ds_name] = load_dataset(
+            ds, ds_stats = load_dataset(
                 path,
                 split,
                 standardization_transform=transform_fn,
                 structure=structure,
-                dataset_statistics=dataset_statistics,
+                dataset_statistics=dataset_statistics_path,
                 recompute_statistics=recompute_statistics,
                 filter_fn=filter_fn,
                 num_parallel_reads=ds_config.get("num_parallel_reads", num_parallel_reads),
                 num_parallel_calls=ds_config.get("num_parallel_calls", num_parallel_calls),
                 shuffle=shuffle_size > 0,
             )
+            train_datasets[ds_name] = ds
             weights[ds_name] = ds_config.get("weight", 1.0)
+            dataset_statistics[ds_name] = ds_stats
 
         # Add val split if present
         if ds_config.get("val_split"):
             # Val dataloading is the same except we limit the number of workers
-            val_datasets[ds_name] = load_dataset(
+            ds, ds_stats = load_dataset(
                 path,
                 ds_config["val_split"],  # Do not split validation set.
                 standardization_transform=transform_fn,
                 structure=structure,
-                dataset_statistics=dataset_statistics,
-                recompute_statistics=ds_config.get("train_split") is not None,
+                dataset_statistics=dataset_statistics_path,
+                recompute_statistics=ds_config.get("train_split") is None and recompute_statistics,
                 filter_fn=filter_fn,
                 num_parallel_reads=VAL_PARALLEL_CALLS,
                 num_parallel_calls=VAL_PARALLEL_CALLS,
                 shuffle=shuffle_size > 0,
             )
             # No weights are used for validation datasets.
+            val_datasets[ds_name] = ds
+            dataset_statistics[ds_name] = ds_stats
 
     if repeat and repeat_early:
         # Repeat here, otherwise will repeat with shuffling for fused op.
@@ -103,15 +109,18 @@ def make_dataloader(
         if goal_conditioned:
             ep = transforms.uniform_goal_relabeling(ep)
         ep = transforms.chunk(ep, n_obs, n_action)
+        # cut the last transition
+        ep = tf.nest.map_structure(lambda x: x[:-1], ep)
 
         # Shuffle and discard.
-        ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
-        idxs = tf.random.shuffle(tf.range(ep_len))
         if discard_fraction > 0:
+            ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
             num_to_keep = tf.maximum(tf.cast(ep_len, tf.float32) * (1 - discard_fraction), 0)
             num_to_keep = tf.cast(num_to_keep, tf.int32)
-            idxs = idxs[:num_to_keep]
-        return tf.nest.map_structure(lambda x: tf.gather(x, idxs), ep)
+            idxs = tf.random.shuffle(tf.range(ep_len))[:num_to_keep]
+            ep = tf.nest.map_structure(lambda x: tf.gather(x, idxs), ep)
+
+        return ep
 
     dataset_ids = sorted(list(set(list(train_datasets.keys()) + list(val_datasets.keys()))))
     dataset_ids = {k: v for v, k in enumerate(dataset_ids)}
@@ -221,4 +230,6 @@ def make_dataloader(
         val_options.autotune.ram_budget = int(1 * 1024 * 1024 * 1024)  # GB -> Bytes
         val_datasets = {k: v.with_options(val_options) for k, v in val_datasets.items()}
 
+    # finally add prefetch as desired
+    train_dataset = train_dataset.prefetch(prefetch)
     return train_dataset, val_datasets, dataset_statistics, dataset_ids

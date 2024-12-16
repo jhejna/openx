@@ -1,15 +1,17 @@
 # Define the config for robomimic
 import optax
+import tensorflow as tf
 from ml_collections import ConfigDict
 
+from openx.algs.bc import BehaviorCloning
 from openx.data.datasets.robomimic import robomimic_dataset_transform
 from openx.data.utils import NormalizationType, StateEncoding
 from openx.envs.robomimic import RobomimicEnv
-from openx.networks.action_heads import DDPMActionHead
-from openx.networks.core import Model
-from openx.networks.mlp import Concatenate
-from openx.networks.resnet import ResNet18
-from openx.networks.unet import ConditionalUnet1D
+from openx.networks.action_heads.ddpm import DDPMActionHead
+from openx.networks.components.mlp import Concatenate
+from openx.networks.components.resnet import ResNet18
+from openx.networks.components.unet import ConditionalUnet1D
+from openx.networks.core import MultiEncoder
 from openx.utils.spec import ModuleSpec
 
 
@@ -39,7 +41,7 @@ def get_config():
     dataloader = dict(
         datasets=dict(
             square_ph=dict(
-                path="path/to/robomimic/dataset",
+                path="path/to/converted/robomimic/dataset",
                 train_split="train",
                 val_split="val",
                 transform=ModuleSpec.create(robomimic_dataset_transform),
@@ -48,21 +50,25 @@ def get_config():
         n_obs=2,
         n_action=16,
         augment_kwargs=dict(scale_range=(0.85, 1.0), aspect_ratio_range=None),
-        chunk_img=True,
         goal_conditioned=False,
         shuffle_size=100000,
         batch_size=256,
         recompute_statistics=True,
+        cache=True,  # Small enough to stay in memory
+        prefetch=tf.data.AUTOTUNE,  # Enable prefetch.
     )
 
-    model = ModuleSpec.create(
-        Model,
-        encoders={
-            "observation->image->agent": ModuleSpec.create(ResNet18),
-            "observation->image->wrist": ModuleSpec.create(ResNet18),
-            "observation->state": None,
-        },
-        trunk=ModuleSpec.create(Concatenate, features=128, flatten_time=True),
+    alg = ModuleSpec.create(
+        BehaviorCloning,
+        observation_encoder=ModuleSpec.create(
+            MultiEncoder,
+            encoders={
+                "observation->image->agent": ModuleSpec.create(ResNet18),
+                "observation->image->wrist": ModuleSpec.create(ResNet18),
+                "observation->state": None,
+            },
+            trunk=ModuleSpec.create(Concatenate, features=128, flatten_time=True),
+        ),
         action_head=ModuleSpec.create(
             DDPMActionHead,
             model=ModuleSpec.create(
@@ -71,6 +77,8 @@ def get_config():
             clip_sample=1.0,
             timesteps=100,
             variance_type="fixed_small",
+            action_dim=7,
+            action_horizon=16,
         ),
     )
 
@@ -84,12 +92,12 @@ def get_config():
     )
     optimizer = ModuleSpec.create(optax.adamw)
 
-    envs = dict(square_ph=ModuleSpec.create(RobomimicEnv, path="path/to/robomimic/dataset", horizon=400))
+    envs = dict(square_ph=ModuleSpec.create(RobomimicEnv, path="/path/to/robomimic/hdf5", horizon=50))
     return ConfigDict(
         dict(
             structure=structure,
             envs=envs,
-            model=model,
+            alg=alg,
             dataloader=dataloader,
             optimizer=optimizer,
             lr_schedule=lr_schedule,
@@ -102,6 +110,7 @@ def get_config():
             val_steps=25,
             n_eval_proc=24,
             eval_ep=24,
+            exec_horizon=8,
             seed=0,
         )
     )

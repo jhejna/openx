@@ -254,6 +254,7 @@ def decode_and_augment(
         )
 
     # Here we assume that images folow the exact keys, so we don't do nesting.
+    # TODO(jhejna): Fix seeding here so we can have constant shifts across keys.
     if aligned:
         bboxes = {
             k: _get_bbox(step["observation"]["image"][k], v) for k, v in structure["observation"]["image"].items()

@@ -181,7 +181,7 @@ def load_dataset(
     assert "observation" in element_spec
     assert "action" in element_spec
 
-    return dataset
+    return dataset, dataset_statistics
 
 
 def load_dataset_statistics(path):
@@ -214,7 +214,13 @@ def compute_dataset_statistics(
         dataset_statistics = load_dataset_statistics(dataset_statistics_path)
     else:
         # Otherwise, load the dataset to compute the statistics, let tf data handle the parallelization
-        dataset = load_dataset(path, split="all", standardization_transform=standardization_transform, structure=None)
+        dataset, _ = load_dataset(
+            path,
+            split="all",
+            standardization_transform=standardization_transform,
+            structure=None,
+            dataset_statistics=None,
+        )
         sa_elem_spec = dict(action=dataset.element_spec["action"], state=dataset.element_spec["observation"]["state"])
         initial_state = dict(
             num_steps=0,

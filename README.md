@@ -71,8 +71,6 @@ There are
 
 1. `load_dataset`. This is when you load and RLDS dataset, and must be used everywhere. After this step is when you can apply dataset specific transformations.
 2. `compute_dataset_statistics` computes and caches dataset statistics globally from a path. This ignores splits.
-3. `standardize_dataset`. This standardizes all datasets to the same format according to a given structure and applies standard episode level transforms. Finally removes the last timestep.
-4. `flatten_dataset`. This flattens the dataset into a dataset of steps from a dataset of trajectories.
 
 The dataloader class does this for all datasets in a standard fashion and then shuffles, decodes images, and applies augmentations.
 
@@ -83,4 +81,8 @@ The following features are planned:
 
 * Incorporate language (choose where the instruction / encoding belongs)
 * allow for changing the action keys for different datasets. ie on bridge we want to train on `achieved_delta` but on other datasets we want `desired_delta`.
+* Allow for structure padding., ie some datasets might not have some values, set those to zero.
 * figure out if we can make the OXE shuffle buffer bigger.
+* Refactor the networks, e.g. the transformer / vit.
+* Add pretrained models (look at flax big_vision for good pretrained models.)
+* Fix seeding for random image augmentations for greater flexibility of trianing.

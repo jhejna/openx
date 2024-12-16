@@ -1,91 +1,10 @@
-import abc
 from typing import Optional
 
-import distrax
 import jax
 from flax import linen as nn
 from jax import numpy as jnp
 
-
-class ActionHead(nn.Module, abc.ABC):
-    model: nn.Module
-    action_dim: int
-    action_horizon: int
-
-    @abc.abstractmethod
-    def predict(self, obs: jax.Array, train: bool = True):
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
-        raise NotImplementedError
-
-
-class L2ActionHead(ActionHead):
-    @nn.compact
-    def __call__(self, obs: jax.Array, train: bool = True):
-        # Assume observation passed in is of shape (B, T, D) or (B, D)
-        x = self.model(obs, train=train)
-        # Handles whether or not the model predicts time.
-        pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
-        x = nn.Dense(pred_dim, kernel_init=nn.initializers.xavier_uniform())(x)
-        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
-
-    def predict(self, obs: jax.Array, train: bool = True):
-        return self(obs, train=train)
-
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
-        pred = self(obs, train=train)
-        return jnp.square(pred - action).sum(axis=-1)  # (B, T, D) --> (B, T)
-
-
-class DiscreteActionHead(ActionHead):
-    n_action_bins: int
-    bin_type: str = "uniform"
-    temperature: Optional[bool] = None
-
-    def setup(self):
-        assert self.n_action_bins <= 256, "Maximum action bins supported is 256 due to uint8."
-        if self.bin_type == "uniform":
-            self.bins = jnp.linspace(-1, 1, self.n_action_bins + 1)
-        elif self.bin_type == "gaussian":
-            # Values chosen to approximate -5 to 5
-            self.bins = jax.scipy.stats.norm.ppf(jnp.linspace(5e-3, 1 - 5e-3, self.n_action_bins + 1), scale=2)
-        else:
-            raise ValueError("Invalid bin type provided")
-        self.bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
-
-    @nn.compact
-    def __call__(self, obs: jax.Array, train: bool = True):
-        x = self.model(obs, train=train)
-        pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
-        x = nn.Dense(pred_dim * self.n_action_bins, kernel_init=nn.initializers.xavier_uniform())(x)
-        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim, self.n_action_bins))
-
-    def predict(self, obs: jax.Array, train: bool = True):
-        logits = self(obs, train=train)
-        # by default we are not going to sample
-        if self.temperature is None:
-            action = jnp.argmax(logits, axis=-1)
-        else:
-            rng, key = jax.random.split(self.make_rng("dropout"))
-            dist = distrax.Categorical(logits=logits / self.temperature)
-            action = dist.sample(seed=key).astype(jnp.int32)
-        return self.bin_centers[action]
-
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
-        logits = self(obs, train=train)  # (B, T, D, N)
-
-        # Clip the actions to be in range
-        action = jnp.clip(action, -1, 1) if self.bin_type == "uniform" else jnp.clip(action, -5, 5)
-
-        # Compute the binned actions
-        action = action[..., None]  # (B, T, D, 1)
-        action_one_hot = (action < self.bins[1:]) & (action >= self.bins[:-1])
-        action_one_hot = action_one_hot.astype(logits.dtype)
-
-        logprobs = jax.nn.log_softmax(logits, axis=-1)  # (B, T, D, N)
-        return -jnp.sum(logprobs * action_one_hot, axis=(-1, -2))  # Sum over dist and action dims
+from . import core
 
 
 def _squaredcos_cap_v2(timesteps, s=0.008):
@@ -96,7 +15,7 @@ def _squaredcos_cap_v2(timesteps, s=0.008):
     return jnp.clip(betas, 0, 0.999)
 
 
-class DDPMActionHead(ActionHead):
+class DDPMActionHead(core.ActionHead):
     """
     Diffusion action head. Based on the DDPM implementation from Octo and Bridge.
     """
@@ -106,6 +25,7 @@ class DDPMActionHead(ActionHead):
     variance_type: str = "fixed_large"
 
     def setup(self):
+        assert self.action_horizon is not None, "Must have action horizon set for DDPM Action Head."
         self.action_proj = nn.Dense(self.action_dim)
         betas = _squaredcos_cap_v2(self.timesteps).astype(jnp.float32)
         self.alphas = 1.0 - betas  # So betas = 1 - alphas
