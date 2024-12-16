@@ -26,6 +26,7 @@ class DDPMActionHead(core.ActionHead):
 
     def setup(self):
         assert self.action_horizon is not None, "Must have action horizon set for DDPM Action Head."
+        assert self.model is not None, "Must have a model for DDPM Action Head."
         self.action_proj = nn.Dense(self.action_dim)
         betas = _squaredcos_cap_v2(self.timesteps).astype(jnp.float32)
         self.alphas = 1.0 - betas  # So betas = 1 - alphas

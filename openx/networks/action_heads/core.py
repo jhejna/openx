@@ -6,9 +6,9 @@ from flax import linen as nn
 
 
 class ActionHead(nn.Module, abc.ABC):
-    model: nn.Module
     action_dim: int
     action_horizon: Optional[int] = None
+    model: Optional[nn.Module] = None
 
     @abc.abstractmethod
     def predict(self, obs: jax.Array, train: bool = True):

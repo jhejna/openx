@@ -26,8 +26,7 @@ class DiscreteActionHead(core.ActionHead):
 
     @nn.compact
     def __call__(self, obs: jax.Array, train: bool = True):
-        x = self.model(obs, train=train)
-
+        x = self.model(obs, train=train) if self.model is not None else obs
         if self.action_horizon is None:
             pred_dim = self.action_dim * self.n_action_bins
             shape = x.shape[:-1] + (self.action_dim, self.action_bins)

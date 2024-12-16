@@ -8,7 +8,7 @@ from . import core
 class L2ActionHead(core.ActionHead):
     @nn.compact
     def __call__(self, obs: jax.Array, train: bool = True):
-        x = self.model(obs, train=train)
+        x = self.model(obs, train=train) if self.model is not None else obs
         if self.action_horizon is None:
             return nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(x)
         x = nn.Dense(self.action_dim * self.action_horizon, kernel_init=nn.initializers.xavier_uniform())(x)
@@ -25,7 +25,7 @@ class L2ActionHead(core.ActionHead):
 class L1ActionHead(core.ActionHead):
     @nn.compact
     def __call__(self, obs: jax.Array, train: bool = True):
-        x = self.model(obs, train=train)
+        x = self.model(obs, train=train) if self.model is not None else obs
         if self.action_horizon is None:
             return nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(x)
         x = nn.Dense(self.action_dim * self.action_horizon, kernel_init=nn.initializers.xavier_uniform())(x)
