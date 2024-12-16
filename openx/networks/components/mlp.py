@@ -52,10 +52,12 @@ class MLPResNetBlock(nn.Module):
     @nn.compact
     def __call__(self, x, train: bool = False):
         residual = x
-        if self.dropout_rate is not None and self.dropout_rate > 0:
-            x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         if self.use_layer_norm:
             x = nn.LayerNorm()(x)
+        # In the case of using layernorm and dropout, prefer doing it this way for the actor
+        # It doesn't make sense to do dropout -> layernorm because it messes up statistics at test time.
+        if self.dropout_rate is not None and self.dropout_rate > 0:
+            x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
         x = nn.Dense(self.features * 4)(x)
         x = self.act(x)
         x = nn.Dense(self.features)(x)

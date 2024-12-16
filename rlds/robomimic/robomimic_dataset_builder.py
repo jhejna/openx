@@ -6,12 +6,16 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+OBJECT_STATE_SIZE = 44  # Set to the max size across robomimic envs. ToolHang is giant.
 
-class SquareMh(tfds.core.GeneratorBasedBuilder):
+
+class RoboMimic(tfds.core.GeneratorBasedBuilder):
     """DatasetBuilder for example dataset."""
 
     VERSION = tfds.core.Version("1.0.0")
     RELEASE_NOTES = {"1.0.0": "Initial release."}
+
+    MANUAL_DOWNLOAD_INSTRUCTIONS = "You can download the raw robomimic datasets from https://robomimic.github.io/docs/datasets/robomimic_v0.1.html."
 
     def _info(self) -> tfds.core.DatasetInfo:
         """Dataset metadata (homepage, citation,...)."""
@@ -56,7 +60,7 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                                                 doc="Robot joint angles.",
                                             ),
                                             "object": tfds.features.Tensor(
-                                                shape=(14,),
+                                                shape=(OBJECT_STATE_SIZE,),
                                                 dtype=np.float32,
                                                 doc="Ground truth object position.",
                                             ),
@@ -87,6 +91,11 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                     "episode_metadata": tfds.features.FeaturesDict(
                         {
                             "file_path": tfds.features.Text(doc="Path to the original data file."),
+                            "ep_idx": tfds.features.Scalar(dtype=np.int32, doc="Detemrinistic index of the episode."),
+                            "quality_score": tfds.features.Scalar(
+                                dtype=np.float32, doc="A quality score, is inf if not present"
+                            ),
+                            "operator": tfds.features.Text(doc="The operator, is '' if not present."),
                         }
                     ),
                 }
@@ -105,6 +114,8 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
             language_instruction = "Pick up the can and move it to the bin."
         elif "lift" in dataset_path:
             language_instruction = "Lift the block."
+        elif "tool_hang" in dataset_path:
+            language_instruction = "Hang the tool."
         else:
             raise ValueError("Unknown Task.")
 
@@ -134,6 +145,9 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
 
         for demo in demos:
             demo_length = f["data"][demo]["dones"].shape[0]
+            padded_object_state = np.zeros((demo_length, OBJECT_STATE_SIZE), dtype=np.float32)
+            object_state = f["data"][demo]["obs"]["object"][:].astype(np.float32)
+            padded_object_state[:, : object_state.shape[-1]] = object_state
             data = dict(
                 action=f["data"][demo]["actions"][:].astype(np.float32),
                 observation=dict(
@@ -145,7 +159,7 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                         gripper_qpos=f["data"][demo]["obs"]["robot0_gripper_qpos"][:].astype(np.float32),
                         joint_pos=f["data"][demo]["obs"]["robot0_joint_pos"][:].astype(np.float32),
                         joint_vel=f["data"][demo]["obs"]["robot0_joint_vel"][:].astype(np.float32),
-                        object=f["data"][demo]["obs"]["object"][:].astype(np.float32),
+                        object=padded_object_state,
                     ),
                 ),
                 is_first=np.zeros(demo_length, dtype=np.bool_),
@@ -163,6 +177,9 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                 episode.append(step)
 
             # Finally add the terminal states.
+            final_padded_object_state = np.zeros((OBJECT_STATE_SIZE,), dtype=np.float32)
+            final_object_state = f["data"][demo]["next_obs"]["object"][demo_length - 1].astype(np.float32)
+            final_padded_object_state[: final_object_state.shape[-1]] = final_object_state
             terminal_step = dict(
                 action=np.zeros(7, dtype=np.float32),
                 observation=dict(
@@ -176,14 +193,14 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                         ),
                         joint_pos=f["data"][demo]["next_obs"]["robot0_joint_pos"][demo_length - 1].astype(np.float32),
                         joint_vel=f["data"][demo]["next_obs"]["robot0_joint_vel"][demo_length - 1].astype(np.float32),
-                        object=f["data"][demo]["next_obs"]["object"][demo_length - 1].astype(np.float32),
+                        object=final_padded_object_state,
                     ),
                 ),
                 is_first=False,
                 is_last=True,
                 is_terminal=True,
                 discount=1.0,
-                reward=0,
+                reward=1.0,
                 language_instruction=language_instruction,
             )
             episode.append(terminal_step)
@@ -200,6 +217,8 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                     metadata["quality_score"] = 1
                 else:
                     raise ValueError("Episode was not in an quality mask.")
+            else:
+                metadata["quality_score"] = -np.inf
 
             # Try to add the operator.
             operator_keys = [
@@ -211,6 +230,8 @@ class SquareMh(tfds.core.GeneratorBasedBuilder):
                     if demo_key in f["mask"][k]:
                         metadata["operator"] = k
                 assert "operator" in metadata, "Operator was not found."
+            else:
+                metadata["operator"] = ""
 
             yield demo, dict(steps=episode, episode_metadata=metadata)
 
