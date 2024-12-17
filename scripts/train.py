@@ -176,16 +176,22 @@ def main(_):
         with tf.io.gfile.GFile(config_path, "w") as f:
             json.dump(FLAGS.config.to_dict(), f, indent=4)
 
-        # Init wandb logging
-        wandb.init(
-            config=FLAGS.config.to_dict(),
-            project=FLAGS.project,
-            name=name,
-            mode="offline" if FLAGS.debug else "online",
-        )
+        # Setup logging
+        if os.environ.get("WANDB_API_KEY") is not None:
+            wandb.init(
+                config=FLAGS.config.to_dict(),
+                project=FLAGS.project,
+                name=name,
+                mode="online",
+            )
+            writers = ("csv",)
+        else:
+            writers = ("csv", "tensorboard")
+    else:
+        writers = ()
 
     # Init Logging, make sure this is done after wandb
-    logger = Logger(save_path, writers=() if FLAGS.debug else ("csv",)) if jax.process_index() == 0 else DummyLogger()
+    logger = Logger(save_path, writers) if jax.process_index() == 0 else DummyLogger()
     timer = Timer()
 
     # Training constants
