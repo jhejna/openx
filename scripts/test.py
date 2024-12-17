@@ -1,30 +1,29 @@
+import functools
 import json
 import os
-from functools import partial
+import pprint
 
 import flax
 import gymnasium as gym
 import jax
-import numpy as np
+import optax
 import tensorflow as tf
 from absl import app, flags
 from jax.experimental import compilation_cache
 from ml_collections import ConfigDict
 from orbax import checkpoint
-import optax
-import functools
-import pprint
 
+from openx.data.core import load_dataset_statistics
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy
-from openx.utils.spec import ModuleSpec, add_kwarg, recursively_instantiate
-from openx.data.core import load_dataset_statistics
+from openx.utils.spec import ModuleSpec, recursively_instantiate
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("path", "/tmp/", "Path to save logs and checkpoints.")
 flags.DEFINE_string("checkpoint_step", None, "Checkpoint step to load.")
 flags.DEFINE_integer("n_eval_proc", 1, "Number of eval processes")
 flags.DEFINE_integer("num_ep", 10, "Number of episodes")
+
 
 def main(_):
     # Initialize experimental jax compilation cache
@@ -47,7 +46,7 @@ def main(_):
 
     # Instantiate the model
     alg = recursively_instantiate(config.alg.to_dict())
-    tx = optax.set_to_zero # Dummy optimizer without state.
+    tx = optax.set_to_zero()  # Dummy optimizer without state.
     rng = jax.random.key(config.seed)
 
     state = alg.init(example_batch, tx, rng)
@@ -83,17 +82,12 @@ def main(_):
                 _make_env, fn=ModuleSpec.instantiate(env_spec), stats=dataset_statistics[env_name]
             )
             vec_env_cls = gym.vector.AsyncVectorEnv if FLAGS.n_eval_proc > 1 else gym.vector.SyncVectorEnv
-            env = vec_env_cls(
-                [env_fn for _ in range(FLAGS.n_eval_proc)], context="spawn", shared_memory=True
-            )
-            eval_metrics = eval_policy(
-                env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep
-            )
+            env = vec_env_cls([env_fn for _ in range(FLAGS.n_eval_proc)], context="spawn", shared_memory=True)
+            eval_metrics = eval_policy(env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep)
             eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
 
             print("#########", env_name, "#########")
             pprint.pprint(eval_metrics)
-
 
 
 if __name__ == "__main__":

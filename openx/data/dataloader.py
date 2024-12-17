@@ -182,6 +182,7 @@ def make_dataloader(
 
     if cache:
         train_dataset = train_dataset.cache()
+        val_datasets = {k: v.cache() for k, v in val_datasets.items()}
 
     # Shuffle the datasets
     if shuffle_size > 0:
