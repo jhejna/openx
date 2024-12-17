@@ -91,6 +91,7 @@ class ConditionalUnet1D(nn.Module):
         time = mish(time)
         time = nn.Dense(self.time_features, kernel_init=default_init())(time)  # (B, D)
         # Define conditioning as time and observation
+        obs = jnp.reshape(obs, time.shape[:-1] + (-1,))  # Flattens time axis if not done already
         cond = jnp.concatenate((obs, time), axis=-1)
 
         # Project Down

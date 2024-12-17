@@ -13,11 +13,11 @@ pip install -e .
 ```
 If you are on GPU, you will additionally need to install the corresponding jaxlib verison.
 ```
-pip install --upgrade "jax[cuda12_pip]==0.4.26" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install --upgrade "jax[cuda12_pip]==0.4.37" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 If you are on TPU, instead run:
 ```
-pip install --upgrade "jax[tpu]==0.4.26" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+pip install --upgrade "jax[tpu]==0.4.37" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 ```
 
 **Robomimic**
@@ -58,7 +58,7 @@ Then repeatedly try to import mujoco_py, robosuite, and robomimic until it works
 
 You can train a Behavior Cloning model with
 ```
-python scripts/train_bc.py --config path/to/config --path save/path --name name/on/wandb --project project/on/wandb
+python scripts/train_bc.py --config path/to/config:config_str --path save/path --name name/on/wandb --project project/on/wandb
 ```
 
 Example config files can be found in `configs`.
@@ -85,4 +85,6 @@ The following features are planned:
 * figure out if we can make the OXE shuffle buffer bigger.
 * Refactor the networks, e.g. the transformer / vit.
 * Add pretrained models (look at flax big_vision for good pretrained models.)
-* Fix seeding for random image augmentations for greater flexibility of trianing.
+* Fix seeding for random image augmentations for greater flexibility of training.
+* Look into order of dropout vs activation for non-ReLU functions.
+* Consider updating configs to use tuples for multi-encoders instead of -> join string.

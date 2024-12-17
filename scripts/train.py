@@ -48,7 +48,7 @@ def main(_):
     rep_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
 
     def shard(batch):
-        batch = jax.tree_util.tree_map(lambda x: x._numpy(), batch)
+        batch = jax.tree.map(lambda x: x._numpy(), batch)
         return multihost_utils.host_local_array_to_global_array(batch, mesh, dp_spec)
 
     # Prevent tensorflow from using GPUs
@@ -72,7 +72,7 @@ def main(_):
     val_iterators = {name: map(shard, ds) for name, ds in val_datasets.items()}
 
     # Deque the first batch to use as an example for instantiating the model
-    example_batch = jax.tree_map(lambda x: x[:1], multihost_utils.process_allgather(next(train_iterator)))
+    example_batch = jax.tree.map(lambda x: x[:1], multihost_utils.process_allgather(next(train_iterator)))
 
     # Instantiate the model
     alg = recursively_instantiate(FLAGS.config.alg.to_dict())
@@ -83,9 +83,13 @@ def main(_):
     kwargs = dict(learning_rate=lr_schedule)
 
     def _get_decay_mask(params):
-        return jax.tree_util.tree_map_with_path(lambda path, _: "kernel" in jax.tree_util.keystr(path), params)
+        return jax.tree.map_with_path(lambda path, _: "kernel" in jax.tree_util.keystr(path), params)
 
-    kwargs["mask" if tx.func is optax.adamw else "weight_decay_mask"] = _get_decay_mask
+    if any(tx.func is func for func in (optax.adadelta, optax.adafactor, optax.lars)):
+        kwargs["weight_decay_mask"] = _get_decay_mask
+    elif any(tx.func is func for func in (optax.adamw, optax.adan, optax.adamaxw, optax.lion, optax.nadamw)):
+        kwargs["mask"] = _get_decay_mask
+
     tx = tx(**kwargs)  # Finally create the optimizer
     if "clip_gradient" in FLAGS.config and FLAGS.config.clip_gradient is not None:
         tx = optax.chain(optax.clip_by_global_norm(FLAGS.config.clip_gradient), tx)
@@ -164,7 +168,7 @@ def main(_):
         dataset_statistics_path = tf.io.gfile.join(save_path, "dataset_statistics.json")
         with tf.io.gfile.GFile(dataset_statistics_path, "w") as f:
             json.dump(
-                jax.tree_map(lambda x: x.tolist() if isinstance(x, np.ndarray) else x, dataset_statistics), f, indent=4
+                jax.tree.map(lambda x: x.tolist() if isinstance(x, np.ndarray) else x, dataset_statistics), f, indent=4
             )
 
         # Save the config
@@ -225,7 +229,7 @@ def main(_):
             logger.update(val_metrics, prefix="val")
             logger.dump(step=step, eval=True)
 
-        if step % FLAGS.config.eval_freq == 0:
+        if "eval_freq" in FLAGS.config and step % FLAGS.config.eval_freq == 0:
             for env_idx, (env_name, env) in enumerate(envs.items()):
                 eval_rng = jax.random.fold_in(rng, env_idx)
                 with timer("eval/" + env_name):

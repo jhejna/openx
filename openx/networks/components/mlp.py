@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import flax.linen as nn
 import jax
@@ -26,20 +26,6 @@ class MLP(nn.Module):
                 if self.dropout_rate is not None and self.dropout_rate > 0:
                     x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
                 x = self.activation(x)
-        return x
-
-
-class Concatenate(nn.Module):
-    features: Optional[int] = None
-    flatten_time: bool = True
-
-    @nn.compact
-    def __call__(self, modalities: Dict[str, jax.Array], train: bool = False):
-        x = jnp.concatenate([modalities[k] for k in sorted(modalities.keys())], axis=-1)  # (B, T, D)
-        if self.features is not None:
-            x = nn.Dense(self.features)(x)
-        if self.flatten_time:
-            x = x.reshape((x.shape[0], -1))
         return x
 
 

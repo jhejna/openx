@@ -8,10 +8,10 @@ from openx.data.datasets.robomimic import robomimic_dataset_transform
 from openx.data.utils import NormalizationType, StateEncoding
 from openx.envs.robomimic import RobomimicEnv
 from openx.networks.action_heads.ddpm import DDPMActionHead
-from openx.networks.components.mlp import Concatenate
+from openx.networks.components.mlp import MLP
 from openx.networks.components.resnet import ResNet18
 from openx.networks.components.unet import ConditionalUnet1D
-from openx.networks.core import MultiEncoder
+from openx.networks.core import Concatenate, MultiEncoder
 from openx.utils.spec import ModuleSpec
 
 
@@ -67,7 +67,7 @@ def get_config():
                 "observation->image->wrist": ModuleSpec.create(ResNet18),
                 "observation->state": None,
             },
-            trunk=ModuleSpec.create(Concatenate, features=128, flatten_time=True),
+            trunk=ModuleSpec.create(Concatenate, model=ModuleSpec.create(MLP, [128]), flatten_time=True),
         ),
         action_head=ModuleSpec.create(
             DDPMActionHead,
