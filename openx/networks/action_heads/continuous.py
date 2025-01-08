@@ -12,7 +12,7 @@ class L2ActionHead(core.ActionHead):
         if self.action_horizon is None:
             return nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(x)
         x = nn.Dense(self.action_dim * self.action_horizon, kernel_init=nn.initializers.xavier_uniform())(x)
-        return jnp.reshape(x, (x.shape[0], self.aciton_horizon, self.action_dim))
+        return jnp.reshape(x, (x.shape[0], self.action_horizon, self.action_dim))
 
     def predict(self, obs: jax.Array, train: bool = True):
         return self(obs, train=train)
@@ -29,7 +29,7 @@ class L1ActionHead(core.ActionHead):
         if self.action_horizon is None:
             return nn.Dense(self.action_dim, kernel_init=nn.initializers.xavier_uniform())(x)
         x = nn.Dense(self.action_dim * self.action_horizon, kernel_init=nn.initializers.xavier_uniform())(x)
-        return jnp.reshape(x, (x.shape[0], self.aciton_horizon, self.action_dim))
+        return jnp.reshape(x, (x.shape[0], self.action_horizon, self.action_dim))
 
     def predict(self, obs: jax.Array, train: bool = True):
         return self(obs, train=train)

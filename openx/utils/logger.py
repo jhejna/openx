@@ -49,7 +49,7 @@ class Writer(ABC):
 class TensorBoardWriter(Writer):
     def __init__(self, path, on_eval=False):
         super().__init__(path, on_eval=on_eval)
-        self.writer = tensorboard.SummaryWriter(self.path)
+        self.writer = tensorboard.summary.Writer(self.path)
 
     def _dump(self, step):
         for k, v in self.values.items():

@@ -42,4 +42,7 @@ def robomimic_dataset_transform(ep: Dict):
     ep["observation"] = observation
     ep["action"] = action
     ep["robot"] = RobotType.PANDA
+    ep["ep_idx"] = ep["episode_metadata"]["ep_idx"]
+    # ep["operator"] = ep["episode_metadata"]["operator"]
+    ep["quality_score"] = ep["episode_metadata"]["quality_score"]
     return ep

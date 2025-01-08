@@ -67,7 +67,9 @@ def get_config():
                 "observation->image->wrist": ModuleSpec.create(ResNet18),
                 "observation->state": None,
             },
-            trunk=ModuleSpec.create(Concatenate, model=ModuleSpec.create(MLP, [128]), flatten_time=True),
+            trunk=ModuleSpec.create(
+                Concatenate, model=ModuleSpec.create(MLP, [128], activate_final=False), flatten_time=True
+            ),
         ),
         action_head=ModuleSpec.create(
             DDPMActionHead,
@@ -92,7 +94,7 @@ def get_config():
     )
     optimizer = ModuleSpec.create(optax.adamw)
 
-    envs = dict(square_ph=ModuleSpec.create(RobomimicEnv, path="/path/to/robomimic/hdf5", horizon=50))
+    envs = dict(square_ph=ModuleSpec.create(RobomimicEnv, path="/path/to/robomimic/hdf5", horizon=500))
     return ConfigDict(
         dict(
             structure=structure,

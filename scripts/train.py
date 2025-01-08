@@ -148,7 +148,7 @@ def main(_):
     name = "".join([chr(c) for c in name])
 
     ### Init Checkpointing ###
-    save_path = tf.io.gfile.join(FLAGS.path, name)
+    save_path = tf.io.gfile.join(os.path.abspath(FLAGS.path), name)
     if not FLAGS.debug:
         state_checkpointer = orbax.checkpoint.CheckpointManager(
             tf.io.gfile.join(save_path, "state"),
@@ -186,7 +186,7 @@ def main(_):
             )
             writers = ("csv",)
         else:
-            writers = ("csv", "tensorboard")
+            writers = ("csv", "tb")
     else:
         writers = ()
 

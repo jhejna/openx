@@ -10,7 +10,7 @@ default_init = nn.initializers.xavier_uniform
 class MLP(nn.Module):
     hidden_dims: Sequence[int]
     activation: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
-    activate_final: bool = False
+    activate_final: bool = True  # By default make this true.
     use_layer_norm: bool = False
     dropout_rate: Optional[float] = None
 
@@ -23,7 +23,8 @@ class MLP(nn.Module):
                     x = nn.LayerNorm()(x)
                 # In the case of using layernorm and dropout, prefer doing it this way for the actor
                 # It doesn't make sense to do dropout -> layernorm because it messes up statistics at test time.
-                if self.dropout_rate is not None and self.dropout_rate > 0:
+                # TODO: check if we should apply dropout before last proj. Assuming not.
+                if i + 1 < len(self.hidden_dims) and self.dropout_rate is not None and self.dropout_rate > 0:
                     x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
                 x = self.activation(x)
         return x

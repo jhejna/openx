@@ -122,7 +122,7 @@ def load_dataset(
     dataset = dataset.with_options(options)
     # filter the dataset according to the filter function BEFORE we do anything else.
     if filter_fn is not None:
-        dataset = dataset.filter(filter_fn)
+        dataset = dataset.filter(filter_fn())
 
     # Determine if we have dataset statistics
     if structure is not None:
