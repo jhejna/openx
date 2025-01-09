@@ -11,7 +11,9 @@ conda activate $ENV_NAME
 cd $REPO_PATH
 unset DISPLAY # Make sure display is not set or it will prevent scripts from running in headless mode.
 
-if $WANDB_API_KEY; then
+
+if [ ! -z "$WANDB_API_KEY" ]; then
+    echo "Using WandB."
     export WANDB_API_KEY=$WANDB_API_KEY
 fi
 
