@@ -17,7 +17,8 @@ def make_dataloader(
     structure: Dict = STANDARD_STRUCTURE,
     n_obs: int = 1,
     n_action: int = 1,
-    goal_conditioned: bool = False,
+    goal_conditioning: str | None = None,
+    add_initial_observation: bool = False,
     augment_kwargs: Optional[Dict] = None,
     batch_size: int = 256,
     shuffle_size: int = 10000,
@@ -106,10 +107,14 @@ def make_dataloader(
     def _stepify(ep, dataset_id):
         ep = transforms.concatenate(ep)
         ep = transforms.add_dataset_id(ep, dataset_id)
-        if goal_conditioned:
+        if goal_conditioning == "uniform":
             ep = transforms.uniform_goal_relabeling(ep)
+        elif goal_conditioning == "last":
+            ep = transforms.last_goal_relabeling(ep)
+        if add_initial_observation:
+            ep = transforms.add_initial_observation(ep)
         ep = transforms.chunk(ep, n_obs, n_action)
-        # cut the last transition
+        # cut the last transition -- its terminal.
         ep = tf.nest.map_structure(lambda x: x[:-1], ep)
 
         # Shuffle and discard.

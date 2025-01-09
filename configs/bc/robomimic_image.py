@@ -15,7 +15,13 @@ from openx.networks.core import Concatenate, MultiEncoder
 from openx.utils.spec import ModuleSpec
 
 
-def get_config():
+def get_config(config_str: str = "256,0.0001,100"):
+    # Parse the config string -- used for sweeping.
+    batch_size, learning_rate, timesteps = config_str.split(",")
+    batch_size = int(batch_size)
+    learning_rate = float(learning_rate)
+    timesteps = int(timesteps)
+
     # Define the structure
     structure = {
         "observation": {
@@ -52,7 +58,7 @@ def get_config():
         augment_kwargs=dict(scale_range=(0.85, 1.0), aspect_ratio_range=None),
         goal_conditioned=False,
         shuffle_size=100000,
-        batch_size=256,
+        batch_size=batch_size,
         recompute_statistics=True,
         cache=True,  # Small enough to stay in memory
         prefetch=tf.data.AUTOTUNE,  # Enable prefetch.
@@ -77,7 +83,7 @@ def get_config():
                 ConditionalUnet1D, down_features=(256, 512, 1024), mid_layers=2, time_features=128, kernel_size=5
             ),
             clip_sample=1.0,
-            timesteps=100,
+            timesteps=timesteps,
             variance_type="fixed_small",
             action_dim=7,
             action_horizon=16,
@@ -87,7 +93,7 @@ def get_config():
     lr_schedule = ModuleSpec.create(
         optax.warmup_cosine_decay_schedule,
         init_value=1e-6,
-        peak_value=1e-4,
+        peak_value=learning_rate,
         warmup_steps=1000,
         decay_steps=500000,
         end_value=1e-6,

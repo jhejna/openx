@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from .utils import NormalizationType
 
-OBSERVATION_KEYS = ("observation", "goal")
+OBSERVATION_KEYS = ("observation", "goal", "initial_observation")
 
 
 def _observation_transform(transform):
@@ -46,11 +46,10 @@ def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = No
     # Action chunking
     action_idx = idx[:, None] + tf.range(0, n_action)
     mask = action_idx < ep_len - 1  # The last action is also invalid!!!!
-    # Handle goals
+    # Handle goals, as they can impact actoin chunking.
     if "goal_idx" in ep:  # If we have goals ensure its less than the goal index
         mask = action_idx < ep["goal_idx"][:, None]
         del ep["goal_idx"]
-        ep["goal"] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=1), ep["goal"])
     action_idx = tf.minimum(action_idx, ep_len - 1)  # mask the actual indexes to not go over.
     ep["mask"] = mask
 
@@ -62,10 +61,19 @@ def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = No
             ep["observation"][k] = tf.nest.map_structure(lambda x: tf.gather(x, obs_idx), ep["observation"][k])
         else:
             ep["observation"][k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), ep["observation"][k])
+
+    # Apply action indexing
     ep["action"] = tf.gather(ep["action"], action_idx)
+
+    # Check for other keys: initial observation, goal etc.
+    for k in ("goal", "initial_observation"):
+        if k in ep:
+            ep[k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=1), ep[k])
+
     return ep
 
 
+@_observation_transform
 def concatenate(ep):
     """
     Concatenates all state and action keys into a fixed order
@@ -84,6 +92,19 @@ def uniform_goal_relabeling(ep: Dict):
     goal_idx = tf.minimum(tf.cast(rand * (high - low) + low, tf.int32), ep_len - 1)
     ep["goal"] = tf.nest.map_structure(lambda x: tf.gather(x, goal_idx), ep["observation"])
     ep["goal_idx"] = goal_idx
+    return ep
+
+
+def last_step_goal_relabeling(ep: Dict):
+    ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
+    ep["goal"] = tf.nest.map_structure(lambda x: tf.repeat(x[-1], ep_len), ep["observation"])
+    ep["goal_index"] = (ep_len - 1) * tf.ones(ep_len, dtype=tf.int32)
+    return ep
+
+
+def add_initial_observation(ep: Dict):
+    ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
+    ep["initial_observation"] = tf.nest.map_structure(lambda x: tf.repeat(x[0], ep_len), ep["observation"])
     return ep
 
 
@@ -301,46 +322,3 @@ def random_noised_actions(step: Dict, train: bool = True, freq: int = 4):
     )
 
     return step
-
-
-def make_actions_zero(step: Dict, train: bool = True):
-    """
-    Used for debugging.
-    """
-    step["action"] = tf.nest.map_structure(lambda x: tf.zeros(x.shape, dtype=x.dtype), step["action"])
-    return step
-
-
-def blur_images(
-    ep: Dict,
-    dataset_id: Optional[int] = None,
-    filter_size: int = 5,
-    sigma: float = 1.0,
-    train: bool = True,
-    aligned: bool = True,
-):
-    """
-    Blurs all images. This is used for debugging doremi.
-    Based on: https://github.com/tensorflow/models/blob/v2.15.0/official/vision/ops/augment.py#L184-L270
-    """
-    # See if we need to perform blur
-    if ep["dataset_id"] != dataset_id:
-        return ep
-
-    @_observation_transform
-    def _apply(obs: Dict):
-        kernel = tf.cast(tf.range(-filter_size // 2 + 1, filter_size // 2 + 1), dtype=tf.float32)
-        kernel = tf.exp(-tf.pow(kernel, 2.0) / (2.0 * (sigma**2)))
-        kernel = kernel / tf.reduce_sum(kernel)
-        kernel = tf.matmul(kernel[:, tf.newaxis], kernel[tf.newaxis, :])  # (K, 1) x (1 x K)
-        kernel = kernel[:, :, tf.newaxis, tf.newaxis]  # (K, K, 1, 1)
-
-        def _blur(image_stack):
-            num_channels = tf.shape(image_stack)[-1]
-            gaussian_kernel = tf.tile(kernel, [1, 1, num_channels, 1])
-            return tf.nn.depthwise_conv2d(image_stack, gaussian_kernel, strides=[1, 1, 1, 1], padding="SAME")
-
-        obs["image"] = tf.nest.map_structure(_blur, obs["image"])
-        return obs
-
-    return _apply(ep)
