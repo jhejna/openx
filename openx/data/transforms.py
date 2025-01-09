@@ -73,13 +73,13 @@ def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = No
     return ep
 
 
-@_observation_transform
-def concatenate(ep):
+def concatenate(ep: Dict):
     """
     Concatenates all state and action keys into a fixed order
     """
-    if "state" in ep["observation"]:
-        ep["observation"]["state"] = tf.concat(tf.nest.flatten(ep["observation"]["state"]), axis=-1)
+    for k in OBSERVATION_KEYS:
+        if "state" in ep[k]:
+            ep[k]["state"] = tf.concat(tf.nest.flatten(ep[k]["state"]), axis=-1)
     ep["action"] = tf.concat(tf.nest.flatten(ep["action"]), axis=-1)
     return ep
 
