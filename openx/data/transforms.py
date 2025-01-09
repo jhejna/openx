@@ -78,7 +78,7 @@ def concatenate(ep: Dict):
     Concatenates all state and action keys into a fixed order
     """
     for k in OBSERVATION_KEYS:
-        if "state" in ep[k]:
+        if k in ep and "state" in ep[k]:
             ep[k]["state"] = tf.concat(tf.nest.flatten(ep[k]["state"]), axis=-1)
     ep["action"] = tf.concat(tf.nest.flatten(ep["action"]), axis=-1)
     return ep
