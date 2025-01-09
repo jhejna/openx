@@ -27,27 +27,29 @@ First, follow the instructions to install `mujoco210_linux` found [here](https:/
 
 ```
 sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
-conda install -c conda-forge gcc=12.1.0
+conda install -c conda-forge gcc=12.1.0  # Only if on TPU, builds fine on standard ubuntu.
 ```
 
 Then, install robosuite, robomimic, and needed dependencies.
 ```
+# Dependencies
+pip install "mujoco-py<2.2,>=2.0"
+pip install cython==0.29.37
+pip install numba
+
 # Robosuite
 git clone https://github.com/ARISE-Initiative/robosuite/
 cd robosuite
 git checkout offline_study
 pip install -e . --no-deps # Ignore
 cd ..
+
 # Robomimic
 git clone https://github.com/ARISE-Initiative/robomimic/
 cd robosuite
 git checkout v0.2.0
 pip install -e . --no-deps # Ignore
 cd ..
-# Dependencies
-pip install "mujoco-py<2.2,>=2.0"
-pip install cython==0.29.37
-pip install numba
 ```
 
 Then repeatedly try to import mujoco_py, robosuite, and robomimic until it works. There are a few manual changes to the code in robosuite and robomimic you will need to make:
@@ -85,6 +87,6 @@ The following features are planned:
 * figure out if we can make the OXE shuffle buffer bigger.
 * Refactor the networks, e.g. the transformer / vit.
 * Add pretrained models (look at flax big_vision for good pretrained models.)
-* Fix seeding for random image augmentations for greater flexibility of training.
+* Fix seeding for random image augmentations for greater flexibility of trianing.
 * Look into order of dropout vs activation for non-ReLU functions.
 * Consider updating configs to use tuples for multi-encoders instead of -> join string.
