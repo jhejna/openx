@@ -1,6 +1,7 @@
+# Override with correct values for your system if non-default.
 CONDA_PATH=~/miniconda3/bin/activate
-ENV_NAME=research
-REPO_PATH=path/to/your/repo
+ENV_NAME=openx
+REPO_PATH=~/openx
 USE_MUJOCO_PY=false # For using mujoco py
 WANDB_API_KEY="" # If you want to use wandb, set this to your API key.
 
@@ -25,10 +26,12 @@ fi
 
 # First check if we have a GPU available
 if nvidia-smi | grep "CUDA Version"; then
-    if [ -d "/usr/local/cuda-11.8" ]; then # This is the only GPU version supported by compile.
-        export PATH=/usr/local/cuda-11.8/bin:$PATH
-    elif [ -d "/usr/local/cuda-11.7" ]; then # This is the only GPU version supported by compile.
-        export PATH=/usr/local/cuda-11.7/bin:$PATH
+    if [ -d "/usr/local/cuda-12.3" ]; then 
+        export PATH=/usr/local/cuda-12.3/bin:$PATH
+    elif [ -d "/usr/local/cuda-12.2" ]; then 
+        export PATH=/usr/local/cuda-12.2/bin:$PATH
+    elif [ -d "/usr/local/cuda-12.1" ]; then 
+        export PATH=/usr/local/cuda-12.1/bin:$PATH # This is the lowest compatible version with current jax.
     elif [ -d "/usr/local/cuda" ]; then
         export PATH=/usr/local/cuda/bin:$PATH
         echo "Using default CUDA, compatibility should be verified."
