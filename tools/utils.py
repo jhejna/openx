@@ -83,6 +83,13 @@ def get_scripts(args: argparse.Namespace) -> List[Tuple[str, Dict]]:
     return scripts
 
 
+def _format_name(s):
+    if os.path.exists(s):
+        s = os.path.basename(os.path.normpath(s))
+        s = os.path.splitext(s)[0]
+    return s.replace("/", "_")
+
+
 def load_ml_collections_sweep(path):
     assert path.endswith(".json"), "Must be a json file"
     with open(path, "r") as f:
@@ -94,7 +101,7 @@ def load_ml_collections_sweep(path):
     sweep = {k: [str(vv) for vv in v] for k, v in sweep.items()}
     config_strs = list(itertools.product(*(v for v in sweep.values())))
     names = [
-        ",".join([k + "=" + v.replace("/", "_") for k, v in zip(sweep.keys(), config_str, strict=False)])
+        ",".join([k + "=" + _format_name(v) for k, v in zip(sweep.keys(), config_str, strict=False)])
         for config_str in config_strs
     ]
     config_strs = [",".join(config_str) for config_str in config_strs]

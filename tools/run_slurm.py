@@ -1,5 +1,6 @@
 import argparse
 import copy
+import itertools
 import os
 import subprocess
 import tempfile
@@ -26,6 +27,8 @@ SLURM_ARGS = {
 }
 
 SLURM_NAME_OVERRIDES = {"gpus": "gres", "cpus": "cpus-per-task"}
+
+MANUAL_SWEEP = None
 
 
 def write_slurm_header(f: TextIO, args: argparse.Namespace) -> None:
@@ -78,7 +81,24 @@ if __name__ == "__main__":
     parser.add_argument("--scripts-per-job", type=int, default=1, help="number of scripts to run per slurm job.")
 
     args = parser.parse_args()
-    scripts = utils.get_scripts(args)
+    if MANUAL_SWEEP is not None:
+        scripts = []
+        configs = list(itertools.product(*MANUAL_SWEEP.values()))
+        keys = list(itertools.chain(*(k if isinstance(k, tuple) else (k,) for k in MANUAL_SWEEP)))
+        for config in configs:
+            values = itertools.chain(*(v if isinstance(v, tuple) else (v,) for v in config))
+            script_args = {k: v for k, v in zip(keys, values, strict=False)}
+            if "path" in script_args:
+                # Add a path based on the parameters.
+                path = script_args.pop("path")
+                name = [
+                    os.path.basename(os.path.normpath(v)) if isinstance(v, str) and os.path.exists(v) else v
+                    for v in script_args.values()
+                ]
+                script_args["path"] = os.path.join(path, "_".join(str(v) for v in name))
+            scripts.append((args.entry_point, script_args))
+    else:
+        scripts = utils.get_scripts(args)
 
     # Call python subprocess to launch the slurm jobs.
     num_slurm_calls = len(scripts) // args.scripts_per_job
