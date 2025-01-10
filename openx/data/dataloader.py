@@ -120,7 +120,7 @@ def make_dataloader(
         # Shuffle and discard.
         if discard_fraction > 0:
             ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
-            num_to_keep = tf.maximum(tf.cast(ep_len, tf.float32) * (1 - discard_fraction), 0)
+            num_to_keep = tf.maximum(tf.cast(ep_len, tf.float32) * (1 - discard_fraction), 1)
             num_to_keep = tf.cast(num_to_keep, tf.int32)
             idxs = tf.random.shuffle(tf.range(ep_len))[:num_to_keep]
             ep = tf.nest.map_structure(lambda x: tf.gather(x, idxs), ep)

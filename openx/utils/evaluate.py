@@ -26,7 +26,8 @@ def load_checkpoint(path: str, step: int | None = None):
     with tf.io.gfile.GFile(tf.io.gfile.join(path, "example_batch.msgpack"), "rb") as f:
         example_batch = flax.serialization.msgpack_restore(f.read())
 
-    dataset_statistics = load_dataset_statistics(path, "dataset_statistics.json")
+    # Load the dataset statistics
+    dataset_statistics = load_dataset_statistics(path)
 
     # Load the config
     with tf.io.gfile.GFile(tf.io.gfile.join(path, "config.json"), "r") as f:
