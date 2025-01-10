@@ -5,14 +5,11 @@ Designed for use with the robot-lightning repository on the panda branch:
 https://github.com/jhejna/robot-lightning/tree/panda
 """
 
-import json
 import os
 import pickle
 from datetime import datetime
-from functools import partial
 
 import cv2
-import flax
 import imageio
 import jax
 import numpy as np
@@ -20,12 +17,10 @@ import tensorflow as tf
 import yaml
 from absl import app, flags
 from jax.experimental import compilation_cache
-from ml_collections import ConfigDict
-from orbax import checkpoint
 
 from openx.envs.franka import FrankaEnv
 from openx.envs.wrappers import preprocess_goal, wrap_env
-from openx.utils.spec import add_kwarg, recursively_instantiate
+from openx.utils.evaluate import load_checkpoint
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("path", None, "Path to checkpoint folder.")
@@ -45,51 +40,16 @@ def main(_):
     # prevent tensorflow from using GPUs
     tf.config.set_visible_devices([], "GPU")
 
-    # Load the example batch
-    with tf.io.gfile.GFile(tf.io.gfile.join(FLAGS.path, "example_batch.msgpack"), "rb") as f:
-        example_batch = flax.serialization.msgpack_restore(f.read())
-
-    # Load the dataset statistics
-    with tf.io.gfile.GFile(tf.io.gfile.join(FLAGS.path, "dataset_statistics.json"), "r") as f:
-        dataset_statistics = json.load(f)
-
-        def _convert_to_numpy(x):
-            return {
-                k: _convert_to_numpy(v) if isinstance(v, dict) else np.array(v, dtype=np.float32) for k, v in x.items()
-            }
-
-        dataset_statistics = _convert_to_numpy(dataset_statistics)
-
-    # select the bridge dataset statistics
-    dataset_statistics = dataset_statistics["cotrain_franka"]
-
-    # Load the config
-    with tf.io.gfile.GFile(tf.io.gfile.join(FLAGS.path, "config.json"), "r") as f:
-        config = json.load(f)
-        config = ConfigDict(config)
-
-    action_horizon, action_dim = example_batch["action"].shape[-2:]
-
-    # Instantiate the model
-    model_config = config.model.to_dict()
-    # A bit of a hack for now to deliver the action_horizon and action_dim to the action_head
-    add_kwarg(model_config, "action_head.action_horizon", action_horizon)
-    add_kwarg(model_config, "action_head.action_dim", action_dim)
-    model = recursively_instantiate(model_config)
-
+    # Load
+    alg, state, dataset_statistics, config = load_checkpoint(FLAGS.path, FLAGS.checkpoint_step)
     rng = jax.random.PRNGKey(config.seed)
-
-    shapes = jax.eval_shape(partial(model.init, train=False), rng, example_batch)
-    checkpointer = checkpoint.CheckpointManager(FLAGS.path, checkpoint.PyTreeCheckpointer())
-    step = FLAGS.checkpoint_step if FLAGS.checkpoint_step is not None else checkpointer.latest_step()
-    params = checkpointer.restore(step, shapes)
 
     ### Define the Predict Function ###
     @jax.jit
-    def predict(params, obs, goal, rng):
+    def predict(obs, goal, rng):
         batch = dict(observation=obs, goal=goal)
         batch = jax.tree.map(lambda x: x[None], batch)
-        action = model.apply(params, batch, rngs=dict(dropout=rng), train=False, method=model.predict)
+        action = alg.predict(state, batch, rng)
         return jax.tree.map(lambda x: x[0], action)
 
     ### Setup Eval Envs ###
@@ -141,7 +101,7 @@ def main(_):
                     cv2.waitKey(10)
 
                 rng = jax.random.fold_in(rng, steps)
-                action = predict(params, obs, goal, rng=rng)
+                action = predict(obs, goal, rng)
                 obs, reward, done, trunc, info = env.step(action)
                 image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)
                 images.append(image)

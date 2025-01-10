@@ -1,8 +1,44 @@
+import json
+import os
 from typing import Callable, Dict
 
+import flax
 import gymnasium as gym
 import jax
 import numpy as np
+import optax
+import tensorflow as tf
+from ml_collections import ConfigDict
+from orbax import checkpoint
+
+from openx.data.core import load_dataset_statistics
+from openx.utils.spec import recursively_instantiate
+
+
+def load_checkpoint(path: str, step: int | None = None):
+    path = os.path.abspath(path)
+    with tf.io.gfile.GFile(tf.io.gfile.join(path, "example_batch.msgpack"), "rb") as f:
+        example_batch = flax.serialization.msgpack_restore(f.read())
+
+    dataset_statistics = load_dataset_statistics(path, "dataset_statistics.json")
+
+    # Load the config
+    with tf.io.gfile.GFile(tf.io.gfile.join(path, "config.json"), "r") as f:
+        config = json.load(f)
+        config = ConfigDict(config)
+
+    # Instantiate the model
+    alg = recursively_instantiate(config.alg.to_dict())
+    tx = optax.set_to_zero()  # Dummy optimizer without state.
+    rng = jax.random.key(config.seed)
+
+    state = alg.init(example_batch, tx, rng)
+    checkpointer = checkpoint.CheckpointManager(path, checkpoint.PyTreeCheckpointer())
+    step = step if step is not None else checkpointer.latest_step()
+    params = checkpointer.restore(step, state.params)
+    state = state.replace(params=params)
+
+    return alg, state, dataset_statistics, config
 
 
 def eval_policy(

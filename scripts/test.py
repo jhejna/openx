@@ -1,22 +1,17 @@
 import functools
-import json
 import os
 import pprint
 
-import flax
 import gymnasium as gym
 import jax
-import optax
 import tensorflow as tf
 from absl import app, flags
 from jax.experimental import compilation_cache
-from ml_collections import ConfigDict
-from orbax import checkpoint
+from utils.checkpointing import load_checkpoint
 
-from openx.data.core import load_dataset_statistics
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy
-from openx.utils.spec import ModuleSpec, recursively_instantiate
+from openx.utils.spec import ModuleSpec
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("path", "/tmp/", "Path to save logs and checkpoints.")
@@ -32,28 +27,8 @@ def main(_):
     # prevent tensorflow from using GPUs
     tf.config.set_visible_devices([], "GPU")
 
-    # Load the example batch
-    with tf.io.gfile.GFile(tf.io.gfile.join(FLAGS.path, "example_batch.msgpack"), "rb") as f:
-        example_batch = flax.serialization.msgpack_restore(f.read())
-
-    # Load the dataset statistics
-    dataset_statistics = load_dataset_statistics(FLAGS.path, "dataset_statistics.json")
-
-    # Load the config
-    with tf.io.gfile.GFile(tf.io.gfile.join(FLAGS.path, "config.json"), "r") as f:
-        config = json.load(f)
-        config = ConfigDict(config)
-
-    # Instantiate the model
-    alg = recursively_instantiate(config.alg.to_dict())
-    tx = optax.set_to_zero()  # Dummy optimizer without state.
+    alg, state, dataset_statistics, config = load_checkpoint(FLAGS.path, FLAGS.checkpoint_step)
     rng = jax.random.key(config.seed)
-
-    state = alg.init(example_batch, tx, rng)
-    checkpointer = checkpoint.CheckpointManager(FLAGS.path, checkpoint.PyTreeCheckpointer())
-    step = FLAGS.checkpoint_step if FLAGS.checkpoint_step is not None else checkpointer.latest_step()
-    params = checkpointer.restore(step, state.params)
-    state = state.replace(params=params)
 
     ### Define the Predict Function ###
     jitted_predict = jax.jit(alg.predict)
