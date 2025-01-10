@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
         with open(slurm_file, "w+") as f:
             write_slurm_header(f, args)
-            f.write("sleep " + str(2 * i))  # Add a sleep to prevent all jobs from starting at the same time.
+            f.write("sleep " + str(2 * i) + " \n")  # Add a sleep to prevent all jobs from starting at the same time.
             # Now that we have written the header we can launch the jobs.
             for entry_point, script_args in current_scripts:
                 command_str = ["python", entry_point]
