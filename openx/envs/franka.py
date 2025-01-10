@@ -11,8 +11,6 @@ def convert_obs(obs):
             agent=obs["agent_image"],
             wrist=obs["wrist_image"],
         ),
-        # For consistency resize using dlimp
-        # new_obs["image_wrist"] = dl.transforms.resize_image(obs["wrist_image"], size=(128, 128)).numpy()
         state={
             StateEncoding.EE_POS: obs["state"]["ee_pos"],
             StateEncoding.EE_QUAT: obs["state"]["ee_quat"],
@@ -91,5 +89,5 @@ class FrankaEnv(gym.Env):
         return convert_obs(obs), reward, done, truncated, info
 
     def reset(self, **kwargs):
-        obs, info = self.env.reset()
+        obs, info = self.env.reset(**kwargs)
         return convert_obs(obs), info

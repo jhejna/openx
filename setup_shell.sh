@@ -11,7 +11,6 @@ conda activate $ENV_NAME
 cd $REPO_PATH
 unset DISPLAY # Make sure display is not set or it will prevent scripts from running in headless mode.
 
-
 if [ ! -z "$WANDB_API_KEY" ]; then
     echo "Using WandB."
     export WANDB_API_KEY=$WANDB_API_KEY
@@ -28,11 +27,11 @@ fi
 
 # First check if we have a GPU available
 if nvidia-smi | grep "CUDA Version"; then
-    if [ -d "/usr/local/cuda-12.3" ]; then 
+    if [ -d "/usr/local/cuda-12.3" ]; then
         export PATH=/usr/local/cuda-12.3/bin:$PATH
-    elif [ -d "/usr/local/cuda-12.2" ]; then 
+    elif [ -d "/usr/local/cuda-12.2" ]; then
         export PATH=/usr/local/cuda-12.2/bin:$PATH
-    elif [ -d "/usr/local/cuda-12.1" ]; then 
+    elif [ -d "/usr/local/cuda-12.1" ]; then
         export PATH=/usr/local/cuda-12.1/bin:$PATH # This is the lowest compatible version with current jax.
     elif [ -d "/usr/local/cuda" ]; then
         export PATH=/usr/local/cuda/bin:$PATH
@@ -45,4 +44,8 @@ if nvidia-smi | grep "CUDA Version"; then
 else
     echo "GPU was not found, assuming CPU setup."
     export MUJOCO_GL="osmesa" # glfw doesn't support headless rendering
+fi
+
+if nvidia-smi | grep "No devices were found"; then
+    export JAX_PLATFORMS=cpu
 fi

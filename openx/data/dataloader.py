@@ -195,7 +195,7 @@ def make_dataloader(
         # The val shuffle size is automatically set to 1/10 that of the train set.
         val_datasets = {
             k: v.shuffle(
-                int(shuffle_size * weights.get(k, 1 / len(val_datasets)) // 10),
+                max(1, int(shuffle_size * weights.get(k, 1 / len(val_datasets)) // 10)),
             )
             for k, v in val_datasets.items()
         }
@@ -215,7 +215,7 @@ def make_dataloader(
     val_datasets = {
         k: v.map(
             functools.partial(_decode_and_augment, train=False),
-            num_parallel_calls=4 * VAL_PARALLEL_CALLS,
+            num_parallel_calls=2 * VAL_PARALLEL_CALLS,
             deterministic=shuffle_size > 0,
         )
         for k, v in val_datasets.items()

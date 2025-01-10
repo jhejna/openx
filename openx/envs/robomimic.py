@@ -6,6 +6,8 @@ from robomimic.utils import env_utils, file_utils
 
 from openx.data.utils import StateEncoding
 
+OBJECT_STATE_SIZE = 44  # Set to the max size across robomimic envs. ToolHang is giant.
+
 
 class RobomimicEnv(gym.Env):
     def __init__(
@@ -17,12 +19,13 @@ class RobomimicEnv(gym.Env):
         super().__init__()
         # Create the environment.
         env_meta = file_utils.get_env_metadata_from_dataset(dataset_path=path)
+        use_image_obs = env_meta["env_kwargs"]["use_camera_obs"]
         self.env = env_utils.create_env_from_metadata(
             env_meta=env_meta,
             env_name=env_meta["env_name"],
             render=False,
             render_offscreen=False,
-            use_image_obs=True,
+            use_image_obs=use_image_obs,
         ).env
         self.env.ignore_done = False
         if horizon is not None:
@@ -30,26 +33,32 @@ class RobomimicEnv(gym.Env):
         self.env._max_episode_steps = self.env.horizon
         self.terminate_early = terminate_early
 
-        self.observation_space = gym.spaces.Dict(
-            dict(
-                image=gym.spaces.Dict(
+        observation_spaces = dict(
+            state=gym.spaces.Dict(
+                {
+                    StateEncoding.EE_POS: gym.spaces.Box(shape=(3,), low=-np.inf, high=np.inf, dtype=np.float32),
+                    StateEncoding.EE_QUAT: gym.spaces.Box(shape=(4,), low=-np.inf, high=np.inf, dtype=np.float32),
+                    StateEncoding.GRIPPER: gym.spaces.Box(shape=(1,), low=-np.inf, high=np.inf, dtype=np.float32),
+                    StateEncoding.JOINT_POS: gym.spaces.Box(shape=(7,), low=-np.inf, high=np.inf, dtype=np.float32),
+                    StateEncoding.JOINT_VEL: gym.spaces.Box(shape=(7,), low=-np.inf, high=np.inf, dtype=np.float32),
+                    StateEncoding.MISC: gym.spaces.Box(
+                        shape=(OBJECT_STATE_SIZE,), low=-np.inf, high=np.inf, dtype=np.float32
+                    ),
+                }
+            ),
+        )
+
+        if use_image_obs:
+            observation_spaces["image"] = (
+                gym.spaces.Dict(
                     dict(
                         agent=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
                         wrist=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
                     )
                 ),
-                state=gym.spaces.Dict(
-                    {
-                        StateEncoding.EE_POS: gym.spaces.Box(shape=(3,), low=-np.inf, high=np.inf, dtype=np.float32),
-                        StateEncoding.EE_QUAT: gym.spaces.Box(shape=(4,), low=-np.inf, high=np.inf, dtype=np.float32),
-                        StateEncoding.GRIPPER: gym.spaces.Box(shape=(1,), low=-np.inf, high=np.inf, dtype=np.float32),
-                        StateEncoding.JOINT_POS: gym.spaces.Box(shape=(7,), low=-np.inf, high=np.inf, dtype=np.float32),
-                        StateEncoding.JOINT_VEL: gym.spaces.Box(shape=(7,), low=-np.inf, high=np.inf, dtype=np.float32),
-                        StateEncoding.MISC: gym.spaces.Box(shape=(14,), low=-np.inf, high=np.inf, dtype=np.float32),
-                    }
-                ),
             )
-        )
+
+        self.observation_space = gym.spaces.Dict(observation_spaces)
         low, high = self.env.action_spec
         self.action_space = gym.spaces.Dict(
             dict(
@@ -68,17 +77,23 @@ class RobomimicEnv(gym.Env):
         )
 
     def _format_obs(self, obs):
-        return dict(
-            image=dict(agent=np.flip(obs["agentview_image"], 0), wrist=np.flip(obs["robot0_eye_in_hand_image"], 0)),
+        obj_state = np.zeros(OBJECT_STATE_SIZE, dtype=np.float32)
+        obj_state[: obs["object-state"].shape[0]] = obs["object-state"]
+        new_obs = dict(
             state={
                 StateEncoding.EE_POS: obs["robot0_eef_pos"],
                 StateEncoding.EE_QUAT: obs["robot0_eef_quat"],
                 StateEncoding.GRIPPER: obs["robot0_gripper_qpos"][..., :1],
                 StateEncoding.JOINT_POS: obs["robot0_joint_pos"],
                 StateEncoding.JOINT_VEL: obs["robot0_joint_vel"],
-                StateEncoding.MISC: obs["object-state"],
+                StateEncoding.MISC: obj_state,
             },
         )
+        if "image" in obs:
+            new_obs["image"] = dict(
+                agent=np.flip(obs["agentview_image"], 0), wrist=np.flip(obs["robot0_eye_in_hand_image"], 0)
+            )
+        return new_obs
 
     def step(self, action: Dict):
         # For now only allow control via the specific action space we care about.
@@ -90,11 +105,8 @@ class RobomimicEnv(gym.Env):
             ),
             axis=-1,
         )
-        # action_max = np.array((0.05, 0.05, 0.05, 0.5, 0.5, 0.5, 1), dtype=np.float32)
-        # action_min = np.array((-0.05, -0.05, -0.05, -0.5, -0.5, -0.5, 0), dtype=np.float32)
-        # action = np.clip(action, a_min=action_min, a_max=action_max)
-        # action = (action - action_min) / (action_max - action_min) * 2 - 1
-        action = np.clip(action, a_min=-1, a_max=1)
+        low, high = self.env.action_spec
+        action = np.clip(action, a_min=low, a_max=high)
         obs, reward, done, info = self.env.step(action)
         success = self.env._check_success()
         info["success"] = success

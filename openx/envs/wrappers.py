@@ -290,7 +290,9 @@ def wrap_env(
     if dataset_statistics is not None:
         env = NormalizationWrapper(env, structure, dataset_statistics)
     env = ConcatenationWrapper(env, structure)
-    env = ResizeImageWrapper(env, structure, scale_range=scale_range)
+    if "image" in structure["observation"]:
+        env = ResizeImageWrapper(env, structure, scale_range=scale_range)
+    # TODO: could make this more efficient by removing if we don't have history or multiple actions.
     if n_obs is not None:
         env = HistoryWrapper(env, horizon=n_obs)
     if n_action is not None:

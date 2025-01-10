@@ -142,7 +142,6 @@ class WidowXGym(gym.Env):
     def step(self, action):
         # sticky gripper logic
         trans_action = convert_act(action)  # transform action back into act format used in bridge env
-        print(trans_action)
         if (trans_action[-1] < 0.5) != self.is_gripper_closed:
             self.num_consecutive_gripper_change_actions += 1
         else:

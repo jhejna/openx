@@ -40,7 +40,10 @@ def eval_policy(
                 rewards.append(ep_reward[i])
                 lengths.append(ep_length[i])
                 # Need to manually check for success
-                successes.append(ep_success[i] or info["final_info"][i]["success"])
+                success = ep_success[i]
+                if "final_info" in info:
+                    success = success or info["final_info"][i]["success"]
+                successes.append(success)
                 ep_reward[i] = 0.0
                 ep_length[i] = 0
                 ep_success[i] = False

@@ -62,8 +62,19 @@ def main(_):
     rng = jax.random.fold_in(rng, jax.process_index())
 
     # Create the dataloader
+    dataloader_config = FLAGS.config.dataloader.to_dict()
+    if FLAGS.debug:
+        # Limit the size of datasets for faster debugging with significantly less fileIO.
+        for dataset in dataloader_config["datasets"].items():
+            if "train_split" in dataset:
+                dataloader_config["datasets"]["train_split"] = "all[:1]"
+            if "val_split" in dataset:
+                dataloader_config["datasets"]["val_split"] = "all[:1]"
+        if dataloader_config.get("shuffle_size", 0) > 0:
+            dataloader_config["shuffle_size"] = 10
+
     train_dataset, val_datasets, dataset_statistics, dataset_ids = make_dataloader(
-        **FLAGS.config.dataloader.to_dict(), structure=FLAGS.config.structure.to_dict(), split_for_jax=True
+        **dataloader_config, structure=FLAGS.config.structure.to_dict(), split_for_jax=True
     )
 
     # Create the data iterators
@@ -115,7 +126,7 @@ def main(_):
         # Must dereference for pickle-ability
         structure = FLAGS.config.structure.to_dict()
         n_obs, n_action = FLAGS.config.dataloader.n_obs, FLAGS.config.dataloader.n_action
-        scale_range = FLAGS.config.dataloader.augment_kwargs.get("scale_range", None)
+        scale_range = FLAGS.config.dataloader.get("augment_kwargs", dict()).get("scale_range", None)
         exec_horizon = FLAGS.config.exec_horizon
 
         def _make_env(fn, stats):
@@ -134,10 +145,12 @@ def main(_):
             env_fn = functools.partial(
                 _make_env, fn=ModuleSpec.instantiate(env_spec), stats=dataset_statistics[env_name]
             )
-            vec_env_cls = gym.vector.AsyncVectorEnv if FLAGS.config.n_eval_proc > 1 else gym.vector.SyncVectorEnv
-            envs[env_name] = vec_env_cls(
-                [env_fn for _ in range(FLAGS.config.n_eval_proc)], context="spawn", shared_memory=True
-            )
+            if FLAGS.config.n_eval_proc > 1:
+                envs[env_name] = gym.vector.AsyncVectorEnv(
+                    [env_fn for _ in range(FLAGS.config.n_eval_proc)], context="spawn", shared_memory=True
+                )
+            else:
+                envs[env_name] = gym.vector.SyncVectorEnv([env_fn])
 
         # No sharding for jitted predict, instead we will broadcast results across processes.
         jitted_predict = jax.jit(alg.predict)
