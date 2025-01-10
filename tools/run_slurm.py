@@ -94,7 +94,7 @@ if __name__ == "__main__":
     assert sum(scripts_per_call) == len(scripts)
     script_index = 0
     procs = []
-    for num_scripts in scripts_per_call:
+    for i, num_scripts in enumerate(scripts_per_call):
         current_scripts = scripts[script_index : script_index + num_scripts]
         script_index += num_scripts
 
@@ -102,6 +102,7 @@ if __name__ == "__main__":
 
         with open(slurm_file, "w+") as f:
             write_slurm_header(f, args)
+            f.write("sleep " + str(2 * i))  # Add a sleep to prevent all jobs from starting at the same time.
             # Now that we have written the header we can launch the jobs.
             for entry_point, script_args in current_scripts:
                 command_str = ["python", entry_point]
