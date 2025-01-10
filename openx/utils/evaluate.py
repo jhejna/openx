@@ -17,6 +17,12 @@ from openx.utils.spec import recursively_instantiate
 
 def load_checkpoint(path: str, step: int | None = None):
     path = os.path.abspath(path)
+    if os.path.basename(os.path.normpath(path)).isdigit():
+        assert step is None, "Provided a checkpoint stpe, but it was already present in the path."
+        # The checkpoint step is included in the path, so get the path from there
+        step = int(os.path.basename(os.path.normpath(path)))
+        path = os.path.dirname(os.path.normpath(path))
+
     with tf.io.gfile.GFile(tf.io.gfile.join(path, "example_batch.msgpack"), "rb") as f:
         example_batch = flax.serialization.msgpack_restore(f.read())
 
