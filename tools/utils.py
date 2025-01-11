@@ -101,7 +101,7 @@ def load_ml_collections_sweep(path):
     sweep = {k: [str(vv) for vv in v] for k, v in sweep.items()}
     config_strs = list(itertools.product(*(v for v in sweep.values())))
     names = [
-        ",".join([k + "=" + _format_name(v) for k, v in zip(sweep.keys(), config_str, strict=False)])
+        "_".join([k + "-" + _format_name(v) for k, v in zip(sweep.keys(), config_str, strict=False)])
         for config_str in config_strs
     ]
     config_strs = [",".join(config_str) for config_str in config_strs]
