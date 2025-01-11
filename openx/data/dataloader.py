@@ -54,7 +54,6 @@ def make_dataloader(
         assert "train_split" in ds_config or "val_split" in ds_config
         path = ds_config["path"]
         transform_fn = ModuleSpec.instantiate(ds_config["transform"])
-        filter_fn = ModuleSpec.instantiate(ds_config.get("filter"))
         dataset_statistics_path = ds_config.get("dataset_statistics")
 
         # Add train split
@@ -69,7 +68,7 @@ def make_dataloader(
                 structure=structure,
                 dataset_statistics=dataset_statistics_path,
                 recompute_statistics=recompute_statistics,
-                filter_fn=filter_fn,
+                filter_fn=ModuleSpec.instantiate(ds_config.get("train_filter", ds_config.get("filter"))),
                 num_parallel_reads=ds_config.get("num_parallel_reads", num_parallel_reads),
                 num_parallel_calls=ds_config.get("num_parallel_calls", num_parallel_calls),
                 shuffle=shuffle_size > 0,
@@ -88,7 +87,7 @@ def make_dataloader(
                 structure=structure,
                 dataset_statistics=dataset_statistics_path,
                 recompute_statistics=ds_config.get("train_split") is None and recompute_statistics,
-                filter_fn=filter_fn,
+                filter_fn=ModuleSpec.instantiate(ds_config.get("val_filter", ds_config.get("filter"))),
                 num_parallel_reads=VAL_PARALLEL_CALLS,
                 num_parallel_calls=VAL_PARALLEL_CALLS,
                 shuffle=shuffle_size > 0,
