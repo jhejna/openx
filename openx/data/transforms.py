@@ -92,19 +92,33 @@ def uniform_goal_relabeling(ep: Dict):
     goal_idx = tf.minimum(tf.cast(rand * (high - low) + low, tf.int32), ep_len - 1)
     ep["goal"] = tf.nest.map_structure(lambda x: tf.gather(x, goal_idx), ep["observation"])
     ep["goal_idx"] = goal_idx
+    ep["horizon"] = tf.maximum(goal_idx - tf.range(ep_len), 0)
     return ep
 
 
 def last_step_goal_relabeling(ep: Dict):
     ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
-    ep["goal"] = tf.nest.map_structure(lambda x: tf.repeat(x[-1], ep_len), ep["observation"])
+    ep["goal"] = tf.nest.map_structure(lambda x: tf.repeat(x[-1:], ep_len, axis=0), ep["observation"])
     ep["goal_index"] = (ep_len - 1) * tf.ones(ep_len, dtype=tf.int32)
+    ep["horizon"] = tf.maximum(ep["goal_index"] - tf.range(ep_len), 0)
     return ep
 
 
 def add_initial_observation(ep: Dict):
     ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
-    ep["initial_observation"] = tf.nest.map_structure(lambda x: tf.repeat(x[0], ep_len), ep["observation"])
+    ep["initial_observation"] = tf.nest.map_structure(lambda x: tf.repeat(x[0:1], ep_len, axis=0), ep["observation"])
+    return ep
+
+
+def add_next_observation(ep: Dict, n_step: int):
+    # Roll -2 does (0, 1, 2, 3) -> (2, 3, 0, 1)
+    next_observation = tf.nest.map_structure(lambda x: tf.roll(x, -n_step, axis=0)[:-n_step], ep["observation"])
+    # Pad out with final observation
+    final_observation = tf.nest.map_structure(lambda x: tf.repeat(x[-1:], n_step, axis=0), ep["observation"])
+    next_observation = tf.nest.map_structure(
+        lambda x, y: tf.concat((x, y), axis=0), next_observation, final_observation
+    )
+    ep["next_observation"] = next_observation
     return ep
 
 
