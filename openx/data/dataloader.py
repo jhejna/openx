@@ -119,7 +119,7 @@ def make_dataloader(
         ep = transforms.chunk(ep, n_obs, n_action)
         # Add next observation if wanted, uses sequence
         if n_step is not None:
-            ep = transforms.n_step(ep, n_step)
+            ep = transforms.add_next_observation(ep, n_step)
         # cut the last transition -- its terminal.
         ep = tf.nest.map_structure(lambda x: x[:-1], ep)
 
