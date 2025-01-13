@@ -27,7 +27,6 @@ First, follow the instructions to install `mujoco210_linux` found [here](https:/
 
 ```
 sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
-conda install -c conda-forge gcc=12.1.0  # Only if on TPU, builds fine on standard ubuntu.
 ```
 
 Then, install robosuite, robomimic, and needed dependencies.

@@ -1,8 +1,12 @@
+import json
+import os
 from typing import Dict, Optional
 
 import gymnasium as gym
+import h5py
 import numpy as np
-from robomimic.utils import env_utils, file_utils
+import tensorflow as tf
+from robomimic.utils import env_utils
 
 from openx.data.utils import StateEncoding
 
@@ -17,15 +21,17 @@ class RobomimicEnv(gym.Env):
         horizon: Optional[int] = 500,
     ):
         super().__init__()
-        # Create the environment.
-        env_meta = file_utils.get_env_metadata_from_dataset(dataset_path=path)
-        use_image_obs = env_meta["env_kwargs"]["use_camera_obs"]
+        # Copy env meta code to allow reading from gcp file systems
+        path = os.path.expanduser(path)
+        with h5py.File(tf.io.gfile.GFile(path, "rb"), "r") as f:
+            env_meta = json.loads(f["data"].attrs["env_args"])
+        self.use_image_obs = env_meta["env_kwargs"]["use_camera_obs"]
         self.env = env_utils.create_env_from_metadata(
             env_meta=env_meta,
             env_name=env_meta["env_name"],
             render=False,
             render_offscreen=False,
-            use_image_obs=use_image_obs,
+            use_image_obs=self.use_image_obs,
         ).env
         self.env.ignore_done = False
         if horizon is not None:
@@ -48,14 +54,12 @@ class RobomimicEnv(gym.Env):
             ),
         )
 
-        if use_image_obs:
-            observation_spaces["image"] = (
-                gym.spaces.Dict(
-                    dict(
-                        agent=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
-                        wrist=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
-                    )
-                ),
+        if self.use_image_obs:
+            observation_spaces["image"] = gym.spaces.Dict(
+                dict(
+                    agent=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
+                    wrist=gym.spaces.Box(shape=(84, 84, 3), dtype=np.uint8, low=0, high=255),
+                )
             )
 
         self.observation_space = gym.spaces.Dict(observation_spaces)
@@ -89,7 +93,7 @@ class RobomimicEnv(gym.Env):
                 StateEncoding.MISC: obj_state,
             },
         )
-        if "image" in obs:
+        if self.use_image_obs:
             new_obs["image"] = dict(
                 agent=np.flip(obs["agentview_image"], 0), wrist=np.flip(obs["robot0_eye_in_hand_image"], 0)
             )

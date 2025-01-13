@@ -45,7 +45,8 @@ def main(_):
     mesh = jax.sharding.Mesh(jax.devices(), axis_names="batch")
     dp_spec = jax.sharding.PartitionSpec("batch")
     dp_sharding = jax.sharding.NamedSharding(mesh, dp_spec)
-    rep_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
+    rep_spec = jax.sharding.PartitionSpec()
+    rep_sharding = jax.sharding.NamedSharding(mesh, rep_spec)
 
     def shard(batch):
         batch = jax.tree.map(lambda x: x._numpy(), batch)
@@ -94,7 +95,7 @@ def main(_):
     kwargs = dict(learning_rate=lr_schedule)
 
     def _get_decay_mask(params):
-        return jax.tree.map_with_path(lambda path, _: "kernel" in jax.tree_util.keystr(path), params)
+        return jax.tree_util.tree_map_with_path(lambda path, _: "kernel" in jax.tree_util.keystr(path), params)
 
     if any(tx.func is func for func in (optax.adadelta, optax.adafactor, optax.lars)):
         kwargs["weight_decay_mask"] = _get_decay_mask
@@ -255,7 +256,8 @@ def main(_):
                     eval_metrics = eval_policy(
                         env, functools.partial(jitted_predict, state), eval_rng, num_ep=FLAGS.config.eval_ep
                     )
-                    eval_metrics = multihost_utils.host_local_array_to_global_array(eval_metrics, mesh, dp_spec)
+                    # Join data from each host to one global array so we log all results.
+                    eval_metrics = multihost_utils.host_local_array_to_global_array(eval_metrics, mesh, rep_spec)
                     eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
                     logger.update(eval_metrics, prefix="eval/" + env_name)
             # Dump the logger with eval metrics
