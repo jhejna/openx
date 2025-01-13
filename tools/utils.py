@@ -100,10 +100,16 @@ def load_ml_collections_sweep(path):
     # NOTE: we care about order
     sweep = {k: [str(vv) for vv in v] for k, v in sweep.items()}
     config_strs = list(itertools.product(*(v for v in sweep.values())))
-    names = [
-        "_".join([k + "-" + _format_name(v) for k, v in zip(sweep.keys(), config_str, strict=False)])
-        for config_str in config_strs
-    ]
+    # Carefully construct the names so that the file names are not too long.
+    names = []
+    for config_str in config_strs:
+        name = []
+        # We only add the first part of the name if there are multiple
+        for k, v in zip(sweep.keys(), config_str, strict=False):
+            for kk, vv in zip(k.split(","), v.split(","), strict=False):
+                name.append(kk + "-" + _format_name(vv))
+        names.append("_".join(name))
+
     config_strs = [",".join(config_str) for config_str in config_strs]
     config_strs = [config + ":" + config_str for config_str in config_strs]
     return config_strs, names
