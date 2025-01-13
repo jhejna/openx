@@ -96,7 +96,7 @@ def uniform_goal_relabeling(ep: Dict):
     return ep
 
 
-def last_step_goal_relabeling(ep: Dict):
+def last_goal_relabeling(ep: Dict):
     ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
     ep["goal"] = tf.nest.map_structure(lambda x: tf.repeat(x[-1:], ep_len, axis=0), ep["observation"])
     ep["goal_index"] = (ep_len - 1) * tf.ones(ep_len, dtype=tf.int32)
