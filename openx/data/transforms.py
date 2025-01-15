@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from .utils import NormalizationType
 
-OBSERVATION_KEYS = ("observation", "goal", "initial_observation")
+OBSERVATION_KEYS = ("observation", "goal", "initial_observation", "next_observation")
 
 
 def _observation_transform(transform):
