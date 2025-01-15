@@ -6,6 +6,7 @@ https://github.com/google/flax/commits/main/examples/imagenet/models.py
 under the APACHE 2.0 license. See the Flax repo for details.
 """
 
+import math
 from functools import partial
 from typing import Any, Callable, Optional, Sequence, Tuple
 
@@ -23,6 +24,7 @@ class ResNetBlock(nn.Module):
     conv: ModuleDef
     norm: ModuleDef
     act: Callable
+    transpose: bool = False
     strides: Tuple[int, int] = (1, 1)
 
     @nn.compact
@@ -31,15 +33,35 @@ class ResNetBlock(nn.Module):
         x,
     ):
         residual = x
-        y = self.conv(self.filters, (3, 3), self.strides)(x)
-        y = self.norm(self.filters // 16)(y)
+        y = self.conv(self.filters, (3, 3), self.strides if not self.transpose else (1, 1), padding="SAME")(x)
+        y = self.norm()(y)
         y = self.act(y)
+        if self.transpose and (self.strides[0] > 1 or self.strides[1] > 1):
+            h, w, c = y.shape[-3:]
+            y = jax.image.resize(
+                x, shape=y.shape[:-3] + (self.strides[0] * h, self.strides[1] * w, c), method="nearest"
+            )
         y = self.conv(self.filters, (3, 3))(y)
-        y = self.norm(self.filters // 16, scale_init=nn.initializers.zeros_init())(y)
+        y = self.norm(scale_init=nn.initializers.zeros_init())(y)
 
         if residual.shape != y.shape:
-            residual = self.conv(self.filters, (1, 1), self.strides, name="conv_proj")(residual)
-            residual = self.norm(self.filters // 16, name="norm_proj")(residual)
+            if self.transpose:
+                h, w, c = residual.shape[-3:]
+                residual = jax.image.resize(
+                    residual,
+                    shape=residual.shape[:-3] + (self.strides[0] * h, self.strides[1] * w, c),
+                    method="nearest",
+                )
+                kernel_size, strides = (3, 3), (1, 1)
+            else:
+                kernel_size, strides = (1, 1), self.strides
+            residual = self.conv(
+                self.filters,
+                kernel_size,
+                strides,
+                name="conv_proj",
+            )(residual)
+            residual = self.norm(name="norm_proj")(residual)
 
         return self.act(residual + y)
 
@@ -117,6 +139,33 @@ class SpatialCoordinates(nn.Module):
         return jnp.concatenate((x, coords), axis=-1)
 
 
+class AttentionPool2d(nn.Module):
+    num_heads: int
+    dtype: Any = jnp.float32
+
+    @nn.compact
+    def __call__(self, x, train: bool = True):
+        h, w, c = x.shape[-3:]
+        x = jnp.reshape(x, x.shape[:-3] + (h * w, c))
+        # the query token is the avg plus pos emb
+        x = jnp.concatenate((jnp.mean(x, axis=-2, keepdims=True), x), axis=-2)
+        pos_emb = self.param(
+            "positional_embedding", nn.initializers.normal(stddev=1 / math.sqrt(c)), x.shape[-2:], self.dtype
+        )
+        x = x + pos_emb
+
+        # NOTE: Clip adds a linear projection after this, but we usually add an output laye afterwards.
+        x = nn.MultiHeadDotProductAttention(
+            num_heads=self.num_heads,
+            kernel_init=nn.initializers.xavier_uniform(),
+            deterministic=not train,
+            dropout_rate=0.0,
+            dtype=self.dtype,
+        )(x[..., :1, :], x)
+        # Remove the channel dim
+        return x[..., 0, :]
+
+
 class ResNet(nn.Module):
     """ResNetV1.5, except with group norm instead of BatchNorm"""
 
@@ -128,16 +177,16 @@ class ResNet(nn.Module):
     conv: ModuleDef = nn.Conv
     spatial_coordinates: bool = False
     num_kp: Optional[int] = None
+    attention_pool: bool = False
+    use_clip_stem: bool = False
 
     @nn.compact
     def __call__(self, obs, goal: Optional[jax.Array] = None, train: bool = True):
+        assert not (self.attention_pool and self.num_kp is not None), "Cannot use attention pool and num_kp"
+
         # Initialize layers
         conv = partial(self.conv, use_bias=False, dtype=self.dtype)
-        norm = partial(
-            nn.GroupNorm,
-            epsilon=1e-5,
-            dtype=self.dtype,
-        )
+        norm = partial(nn.GroupNorm, 32, epsilon=1e-5, dtype=self.dtype)
         act = getattr(jax.nn, self.act)
 
         # Obs is shape (B, T, H, W, C), Goal is shape (B, 1, H, W, C)
@@ -149,46 +198,103 @@ class ResNet(nn.Module):
             # Add spatial coordinates.
             x = SpatialCoordinates(dtype=self.dtype)(x)
 
-        x = conv(
-            self.num_filters,
-            (7, 7),
-            (2, 2),
-            padding=[(3, 3), (3, 3)],
-            name="conv_init",
-        )(x)
-        x = norm(self.num_filters // 16, name="gn_init")(x)
-        x = nn.relu(x)
-        x = nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME")
+        if self.use_clip_stem:
+            # Use the CLIP resnet stem
+            # see https://github.com/openai/CLIP/blob/main/clip/model.py
+            x = conv(self.num_filters // 2, (3, 3), (2, 2), padding="SAME", name="conv_stem_1")(x)
+            x = norm(name="norm_stem_1")(x)
+            x = nn.relu(x)
+            x = conv(self.num_filters // 2, (3, 3), padding="SAME", name="conv_stem_2")(x)
+            x = norm(name="norm_stem_2")(x)
+            x = nn.relu(x)
+            x = conv(self.num_filters, (3, 3), padding="SAME", name="conv_stem_3")(x)
+            x = norm(name="norm_stem_3")(x)
+            x = nn.relu(x)
+            x = nn.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
+
+        else:
+            x = conv(self.num_filters, (7, 7), (2, 2), padding=[(3, 3), (3, 3)], name="conv_init")(x)
+            x = norm(name="gn_init")(x)
+            x = nn.relu(x)
+            x = nn.max_pool(x, (3, 3), strides=(2, 2), padding="SAME")
+
+        # The main body of the resnet
         for i, block_size in enumerate(self.stage_sizes):
             for j in range(block_size):
                 strides = (2, 2) if i > 0 and j == 0 else (1, 1)
-                x = self.block_cls(
-                    self.num_filters * 2**i,
-                    strides=strides,
-                    conv=conv,
-                    norm=norm,
-                    act=act,
-                )(x)
+                x = self.block_cls(self.num_filters * 2**i, strides=strides, conv=conv, norm=norm, act=act)(x)
 
         if self.num_kp is not None:
             return SpatialSoftmax(num_kp=self.num_kp)(x)
+        if self.attention_pool:
+            return AttentionPool2d(num_heads=x.shape[-1] // 16)(x)
         # Perform average pooling over the enbmeddings.
         return jnp.mean(x, axis=(-3, -2))  # (..., H, W, C) -> (B, T, C).
+
+
+class ResNetDecoder(nn.Module):
+    """ResNet Decoder Network"""
+
+    stage_sizes: Sequence[int] = (3, 4, 6, 3)
+    block_cls: ModuleDef = ResNetBlock
+    num_filters: int = 64
+    dtype: Any = jnp.float32
+    act: str = "relu"
+    conv: ModuleDef = nn.Conv
+    spatial_coordinates: bool = False
+    num_kp: Optional[int] = None
+
+    @nn.compact
+    def __call__(self, z, obs, goal: Optional[jax.Array] = None, train: bool = True):
+        assert self.block_cls is ResNetBlock, "BottleNeckBlock not yet implemented."
+        assert goal is None, "goal not yet supported."
+
+        # Initialize layers
+        conv = partial(self.conv, use_bias=False, dtype=self.dtype)
+        norm = partial(nn.GroupNorm, 32, epsilon=1e-5, dtype=self.dtype)
+        act = getattr(jax.nn, self.act)
+
+        # Run initial projection
+        x = nn.Dense(512)(z)
+        x = jnp.reshape(x, x.shape[:-1] + (1, 1, 512))
+        x = jax.image.resize(x, shape=x.shape[:-3] + (4, 4, 512), method="nearest")
+
+        # Go through the same computations as before, but reverse the stage sizes.
+        for i, block_size in reversed(list(enumerate(self.stage_sizes))):
+            for j in reversed(list(range(block_size))):
+                strides = (2, 2) if i > 0 and j == 0 else (1, 1)
+                padding = "SAME" if i >= 2 else 2  # Though a bit cumbersome, this gets us back to the correct shape.
+                x = self.block_cls(
+                    self.num_filters * 2**i,
+                    strides=strides,
+                    conv=partial(conv, padding=padding),
+                    norm=norm,
+                    act=act,
+                    transpose=True,
+                )(x)
+
+        x = jax.image.resize(x, shape=x.shape[:-3] + (2 * x.shape[-3], 2 * x.shape[-2], x.shape[-1]), method="nearest")
+        x = conv(3, (3, 3), padding="SAME")(x)
+        # TODO: maybe add a final activation and/or project values back to -1 to 1?
+        # For now image labels are in 0, 1 range from tfds
+        return jnp.reshape(x, obs.shape)
 
 
 class ResNet18(ResNet):
     stage_sizes: Sequence[int] = (2, 2, 2, 2)
     block_cls: ModuleDef = ResNetBlock
-    num_kp: Optional[int] = 64
 
 
 class ResNet34(ResNet):
     stage_sizes: Sequence[int] = (3, 4, 6, 3)
     block_cls: ModuleDef = ResNetBlock
-    num_kp: Optional[int] = 96
 
 
 class ResNet50(ResNet):
     stage_sizes: Sequence[int] = (3, 4, 6, 3)
     block_cls: ModuleDef = BottleneckResNetBlock
-    num_kp: Optional[int] = 128
+
+
+class ResNet18Decoder(ResNetDecoder):
+    stage_sizes: Sequence[int] = (2, 2, 2, 2)
+    block_cls: ModuleDef = ResNetBlock
