@@ -28,6 +28,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("path", "/tmp/test/", "Path to save logs and checkpoints.")
 flags.DEFINE_string("name", "train", "Name of the experiment")
 flags.DEFINE_string("project", "openx", "WandB project to save logs to.")
+flags.DEFINE_bool("include_timestamp", True, "Include timestamp in the experiment name.")
 flags.DEFINE_bool("debug", False, "Whether or not to enable debug mode.")
 # Always lock the config to avoid subtle bugs
 config_flags.DEFINE_config_file(
@@ -157,7 +158,10 @@ def main(_):
         jitted_predict = jax.jit(alg.predict)
 
     ### Broadcast name across all hosts ###
-    name = "{name}_{time}".format(name=FLAGS.name, time=datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    if FLAGS.include_timestamp:
+        name = "{name}_{time}".format(name=FLAGS.name, time=datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    else:
+        name = FLAGS.name
     name = multihost_utils.broadcast_one_to_all(np.array([ord(c) for c in name], dtype=np.uint8))
     name = "".join([chr(c) for c in name])
 

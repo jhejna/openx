@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     tpus = itertools.chain(*[[tpu] * args.scripts_per_vm for tpu in args.tpus])
 
-    for idx, (script, tpu) in enumerate(zip(scripts, args.tpus, strict=False)):
+    for idx, (script_args, tpu) in enumerate(zip(scripts, args.tpus, strict=False)):
         if args.scripts_per_vm == 2:
             prefix = ["TPU01", "TPU23"][idx % 2]
         elif args.scripts_per_vm == 4:
@@ -76,13 +76,11 @@ if __name__ == "__main__":
         with open(script_file, "w+") as f:
             write_tpu_header(f)
             # After we write the header, write the command
-            entry_point, script_args = script
-            command_str = ["PYTHONPATH=.", "python", entry_point]
+            command_str = ["PYTHONPATH=.", "python", args.entry_point]
             if prefix != "":
                 command_str = [prefix, *command_str]
             for arg_name, arg_value in script_args.items():
-                command_str.append("--" + arg_name)
-                command_str.append(str(arg_value))
+                command_str.append("--" + arg_name + "=" + str(arg_value))
             command_str = " ".join(command_str) + "\n"
             f.write(command_str)
 

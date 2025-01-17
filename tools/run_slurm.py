@@ -2,7 +2,6 @@ import argparse
 import copy
 import itertools
 import os
-import subprocess
 import tempfile
 from typing import TextIO
 
@@ -79,8 +78,8 @@ if __name__ == "__main__":
         help="Whether or not to spread out jobs that don't divide evently, or place them in a new job",
     )
     parser.add_argument("--scripts-per-job", type=int, default=1, help="number of scripts to run per slurm job.")
-
     args = parser.parse_args()
+
     if MANUAL_SWEEP is not None:
         scripts = []
         configs = list(itertools.product(*MANUAL_SWEEP.values()))
@@ -88,15 +87,12 @@ if __name__ == "__main__":
         for config in configs:
             values = itertools.chain(*(v if isinstance(v, tuple) else (v,) for v in config))
             script_args = {k: v for k, v in zip(keys, values, strict=False)}
-            if "path" in script_args:
+            if "path" not in script_args:
                 # Add a path based on the parameters.
                 path = script_args.pop("path")
-                name = [
-                    os.path.basename(os.path.normpath(v)) if isinstance(v, str) and os.path.exists(v) else v
-                    for v in script_args.values()
-                ]
-                script_args["path"] = os.path.join(path, "_".join(str(v) for v in name))
-            scripts.append((args.entry_point, script_args))
+                name = "_".join([utils._format_name(v) for v in script_args.values()])
+                script_args["path"] = os.path.join(path, name)
+            scripts.append(script_args)
     else:
         scripts = utils.get_scripts(args)
 
@@ -124,11 +120,10 @@ if __name__ == "__main__":
             write_slurm_header(f, args)
             f.write("sleep " + str(2 * i) + " \n")  # Add a sleep to prevent all jobs from starting at the same time.
             # Now that we have written the header we can launch the jobs.
-            for entry_point, script_args in current_scripts:
-                command_str = ["python", entry_point]
+            for script_args in current_scripts:
+                command_str = ["python", args.entry_point]
                 for arg_name, arg_value in script_args.items():
-                    command_str.append("--" + arg_name)
-                    command_str.append(str(arg_value))
+                    command_str.append("--" + arg_name + "=" + str(arg_value))
                 if len(current_scripts) != 1:
                     command_str.append("&")
                 command_str = " ".join(command_str) + "\n"
@@ -137,8 +132,9 @@ if __name__ == "__main__":
                 f.write("wait")
 
         # Now launch the job
+        print(command_str)
         print("Launching job with slurm configuration:", slurm_file)
-        proc = subprocess.Popen(["sbatch", slurm_file])
-        procs.append(proc)
+        # proc = subprocess.Popen(["sbatch", slurm_file])
+        # procs.append(proc)
 
     exit_codes = [p.wait() for p in procs]
