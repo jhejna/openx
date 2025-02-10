@@ -15,13 +15,15 @@ from openx.data.core import load_dataset_statistics
 from openx.utils.spec import recursively_instantiate
 
 
-def load_checkpoint(path: str, step: int | None = None):
-    path = os.path.abspath(path)
-    if os.path.basename(os.path.normpath(path)).isdigit():
-        assert step is None, "Provided a checkpoint stpe, but it was already present in the path."
+def load_checkpoint(path: str, step: int | None = None, sharding: jax.sharding.Sharding | None = None):
+    if not path.startswith("gs://"):
+        path = os.path.abspath(path)
+    path = path[:-1] if path.endswith("/") else path
+    if os.path.basename(path).isdigit():
+        assert step is None, "Provided a checkpoint step, but it was already present in the path."
         # The checkpoint step is included in the path, so get the path from there
-        step = int(os.path.basename(os.path.normpath(path)))
-        path = os.path.dirname(os.path.normpath(path))
+        step = int(os.path.basename(path))
+        path = os.path.dirname(path)
 
     with tf.io.gfile.GFile(tf.io.gfile.join(path, "example_batch.msgpack"), "rb") as f:
         example_batch = flax.serialization.msgpack_restore(f.read())
@@ -40,9 +42,20 @@ def load_checkpoint(path: str, step: int | None = None):
     rng = jax.random.key(config.seed)
 
     state = alg.init(example_batch, tx, rng)
+    if sharding is not None:
+        # If sharding is supplied, shard the state and add restore args for every item.
+        state = jax.tree.map(lambda x: jax.device_put(x, sharding), state)
+        restore_kwargs = {
+            "restore_args": checkpoint.checkpoint_utils.construct_restore_args(
+                state.params, jax.tree.map(lambda _: sharding, state.params)
+            )
+        }
+    else:
+        restore_kwargs = {}
+
     checkpointer = checkpoint.CheckpointManager(path, checkpoint.PyTreeCheckpointer())
     step = step if step is not None else checkpointer.latest_step()
-    params = checkpointer.restore(step, state.params)
+    params = checkpointer.restore(step, state.params, restore_kwargs=restore_kwargs)
     state = state.replace(params=params)
 
     return alg, state, dataset_statistics, config

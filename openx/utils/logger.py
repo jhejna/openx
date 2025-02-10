@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from contextlib import contextmanager
+from functools import partial
 from typing import Dict, Optional
 
 import numpy as np
@@ -25,20 +26,20 @@ except ModuleNotFoundError:
 
 
 class Writer(ABC):
-    def __init__(self, path, on_eval=False):
+    def __init__(self, path, on_prefix: str | None = None):
         self.path = path
-        self.on_eval = on_eval
+        self.on_prefix = on_prefix
         self.values = {}
 
     def update(self, d: Dict) -> None:
         self.values.update(d)
 
-    def dump(self, step: int, eval: bool = False) -> None:
-        if not self.on_eval or eval:  # Always dump on eval.
+    def dump(self, step: int, prefix: str | None = None) -> None:
+        if self.on_prefix is None or prefix == str(self.on_prefix):
             self._dump(step)
 
     @abstractmethod
-    def _dump(self, step: int, eval: bool = False) -> None:
+    def _dump(self, step: int) -> None:
         return NotImplementedError
 
     @abstractmethod
@@ -47,8 +48,8 @@ class Writer(ABC):
 
 
 class TensorBoardWriter(Writer):
-    def __init__(self, path, on_eval=False):
-        super().__init__(path, on_eval=on_eval)
+    def __init__(self, path, on_prefix=None):
+        super().__init__(path, on_prefix=on_prefix)
         self.writer = tensorboard.summary.Writer(self.path)
 
     def _dump(self, step):
@@ -62,16 +63,17 @@ class TensorBoardWriter(Writer):
 
 
 class CSVWriter(Writer):
-    def __init__(self, path, on_eval=True):
-        super().__init__(path, on_eval=on_eval)
-        self._csv_path = tf.io.gfile.join(self.path, "log.csv")
+    def __init__(self, path, on_prefix="val"):
+        assert on_prefix is not None, "on_prefix must be set for CSVWriter."
+        super().__init__(path, on_prefix=on_prefix)
+        self._csv_path = tf.io.gfile.join(self.path, on_prefix + ".csv")
         self._csv_file_handler = None
         self.csv_logger = None
         self.num_keys = 0
 
         # If we are continuing to train, make sure that we know how many keys to expect.
         if tf.io.gfile.exists(self._csv_path):
-            with tf.io.gfile.GFile(self._csv_path, "r") as f:  # TODO: FIX
+            with tf.io.gfile.GFile(self._csv_path, "r") as f:
                 reader = csv.DictReader(f)
                 fieldnames = reader.fieldnames.copy()
                 num_keys = len(fieldnames)
@@ -87,6 +89,10 @@ class CSVWriter(Writer):
         self.csv_file_handler = tf.io.gfile.GFile(self._csv_path, "w")  # Write a new one
         self.csv_logger = csv.DictWriter(self.csv_file_handler, fieldnames=list(self.values.keys()))
         self.csv_logger.writeheader()
+
+    def update(self, d: Dict) -> None:
+        # Override this method only for csv to ignore timing metrics
+        self.values.update({k: v for k, v in d.items() if not k.startswith("time")})
 
     def _dump(self, step):
         # Record the step
@@ -110,8 +116,8 @@ class CSVWriter(Writer):
 
 
 class WandBWriter(Writer):
-    def __init__(self, path: str, on_eval: bool = False):
-        super().__init__(path, on_eval=on_eval)
+    def __init__(self, path: str, on_prefix: str | None = None):
+        super().__init__(path, on_prefix=on_prefix)
 
     def _dump(self, step: int) -> None:
         wandb.log(self.values, step=step)
@@ -129,7 +135,14 @@ class Logger(object):
 
         self.writers = []
         for writer in writers:
-            self.writers.append({"tb": TensorBoardWriter, "csv": CSVWriter, "wandb": WandBWriter}[writer](path))
+            self.writers.append(
+                {
+                    "tb": TensorBoardWriter,
+                    "csv": partial(CSVWriter, on_prefix="val"),
+                    "wandb": WandBWriter,
+                    "eval": partial(CSVWriter, on_prefix="eval"),
+                }[writer](path)
+            )
 
     def update(self, d: Dict, prefix: Optional[str] = None) -> None:
         d = {k: np.mean(v) for k, v in d.items()}
@@ -138,9 +151,9 @@ class Logger(object):
         for writer in self.writers:
             writer.update(d)
 
-    def dump(self, step: int, eval: bool = False) -> None:
+    def dump(self, step: int, prefix: str | None = None) -> None:
         for writer in self.writers:
-            writer.dump(step, eval=eval)
+            writer.dump(step, prefix=prefix)
 
     def close(self) -> None:
         for writer in self.writers:

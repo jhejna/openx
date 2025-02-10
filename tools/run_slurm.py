@@ -2,6 +2,7 @@ import argparse
 import copy
 import itertools
 import os
+import subprocess
 import tempfile
 from typing import TextIO
 
@@ -11,7 +12,7 @@ SLURM_LOG_DEFAULT = os.path.join(utils.STORAGE_ROOT, "slurm_logs")
 
 SLURM_ARGS = {
     "partition": {"type": str, "required": True},
-    "time": {"type": str, "default": "48:00:00"},
+    "time": {"type": str, "default": "72:00:00"},
     "nodes": {"type": int, "default": 1},
     "ntasks-per-node": {"type": int, "default": 1},
     "cpus": {"type": int, "required": True},
@@ -132,9 +133,9 @@ if __name__ == "__main__":
                 f.write("wait")
 
         # Now launch the job
-        print(command_str)
+        # print(command_str)
         print("Launching job with slurm configuration:", slurm_file)
-        # proc = subprocess.Popen(["sbatch", slurm_file])
-        # procs.append(proc)
+        proc = subprocess.Popen(["sbatch", slurm_file])
+        procs.append(proc)
 
     exit_codes = [p.wait() for p in procs]

@@ -178,11 +178,14 @@ class ResNet(nn.Module):
     spatial_coordinates: bool = False
     num_kp: Optional[int] = None
     attention_pool: bool = False
+    average_pool: bool = False
     use_clip_stem: bool = False
 
     @nn.compact
     def __call__(self, obs, goal: Optional[jax.Array] = None, train: bool = True):
-        assert not (self.attention_pool and self.num_kp is not None), "Cannot use attention pool and num_kp"
+        assert (
+            sum((self.attention_pool, self.average_pool, self.num_kp is not None)) <= 1
+        ), "Multiple types of pooling provided. Can only use one."
 
         # Initialize layers
         conv = partial(self.conv, use_bias=False, dtype=self.dtype)
@@ -228,8 +231,9 @@ class ResNet(nn.Module):
             return SpatialSoftmax(num_kp=self.num_kp)(x)
         if self.attention_pool:
             return AttentionPool2d(num_heads=x.shape[-1] // 16)(x)
-        # Perform average pooling over the enbmeddings.
-        return jnp.mean(x, axis=(-3, -2))  # (..., H, W, C) -> (B, T, C).
+        if self.average_pool:
+            return jnp.mean(x, axis=(-3, -2))  # (..., H, W, C) -> (B, T, C).
+        return x  # (B, T, H, W, C)
 
 
 class ResNetDecoder(nn.Module):
@@ -242,7 +246,6 @@ class ResNetDecoder(nn.Module):
     act: str = "relu"
     conv: ModuleDef = nn.Conv
     spatial_coordinates: bool = False
-    num_kp: Optional[int] = None
 
     @nn.compact
     def __call__(self, z, obs, goal: Optional[jax.Array] = None, train: bool = True):
@@ -257,13 +260,18 @@ class ResNetDecoder(nn.Module):
         # Run initial projection
         x = nn.Dense(512)(z)
         x = jnp.reshape(x, x.shape[:-1] + (1, 1, 512))
-        x = jax.image.resize(x, shape=x.shape[:-3] + (4, 4, 512), method="nearest")
 
+        # These parameters are known to work for 84x84, 128x128, 224x224
+        h, w, _ = obs.shape[-3:]
+        scale_h, scale_w = round(h / 32) + 1, round(w / 32) + 1
+        num_with_padding = round(h / 64) + 1
+
+        x = jax.image.resize(x, shape=x.shape[:-3] + (scale_h, scale_w, 512), method="nearest")
         # Go through the same computations as before, but reverse the stage sizes.
         for i, block_size in reversed(list(enumerate(self.stage_sizes))):
             for j in reversed(list(range(block_size))):
                 strides = (2, 2) if i > 0 and j == 0 else (1, 1)
-                padding = "SAME" if i >= 2 else 2  # Though a bit cumbersome, this gets us back to the correct shape.
+                padding = 2 if i < num_with_padding else "SAME"
                 x = self.block_cls(
                     self.num_filters * 2**i,
                     strides=strides,
@@ -274,7 +282,15 @@ class ResNetDecoder(nn.Module):
                 )(x)
 
         x = jax.image.resize(x, shape=x.shape[:-3] + (2 * x.shape[-3], 2 * x.shape[-2], x.shape[-1]), method="nearest")
-        x = conv(3, (3, 3), padding="SAME")(x)
+        if obs.shape[-3] == x.shape[-3]:
+            output_pad = "PAD"
+        else:
+            assert obs.shape[-3] > x.shape[-3]
+            output_pad = obs.shape[-3] - x.shape[-3]
+
+        output_pad = "SAME" if obs.shape[-3] == x.shape[-3] else obs.shape[-3] - x.shape[-3] - 1
+        x = conv(3, (3, 3), padding=output_pad)(x)
+
         # TODO: maybe add a final activation and/or project values back to -1 to 1?
         # For now image labels are in 0, 1 range from tfds
         return jnp.reshape(x, obs.shape)

@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -128,13 +128,13 @@ class StructureWrapper(gym.Wrapper):
         return self._standardize_structure(obs), info
 
 
-def _resize_images(obs: Dict, structure: Dict, scale_range: Optional[List] = None):
+def _resize_images(obs: Dict, structure: Dict, **augment_kwargs):
     # Ok yes this function does modify in place, but **shrug** for now I'm tired.
     if "image" in structure:
         output_image_obs = dict()
         for k, shape in structure["image"].items():
             imgs = obs["image"][k]
-            center_bbox = transforms._center_bbox(imgs.shape, shape, scale_range=scale_range)
+            center_bbox = transforms._center_bbox(imgs.shape, shape, **augment_kwargs)
             imgs = tf.image.crop_to_bounding_box(imgs, *center_bbox)
             # TODO: test adjusting the image jpeg qualtiy to account for dataset compression.
             # imgs = tf.stack([tf.image.adjust_jpeg_quality(img, 95) for img in tf.unstack(imgs, axis=0)], axis=0)
@@ -147,10 +147,10 @@ def _resize_images(obs: Dict, structure: Dict, scale_range: Optional[List] = Non
 
 
 class ResizeImageWrapper(gym.Wrapper):
-    def __init__(self, env, structure: Dict, scale_range: Optional[Tuple[float, float]] = None):
+    def __init__(self, env, structure: Dict, augment_kwargs: Optional[Dict] = None):
         super().__init__(env)
         self.structure = structure
-        self.scale_range = scale_range
+        self.augment_kwargs = augment_kwargs
         assert isinstance(self.env.observation_space, gym.spaces.Dict)
         spaces = {k: v for k, v in self.env.observation_space.spaces.items() if k != "image"}
         if "image" in self.env.observation_space.spaces:
@@ -165,12 +165,12 @@ class ResizeImageWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, done, trunc, info = self.env.step(action)
-        obs = _resize_images(obs, self.structure["observation"], scale_range=self.scale_range)
+        obs = _resize_images(obs, self.structure["observation"], **self.augment_kwargs)
         return obs, reward, done, trunc, info
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs = _resize_images(obs, self.structure["observation"], scale_range=self.scale_range)
+        obs = _resize_images(obs, self.structure["observation"], **self.augment_kwargs)
         return obs, info
 
 
@@ -284,14 +284,14 @@ def wrap_env(
     n_obs: int = 1,
     n_action: int = 1,
     exec_horizon: int = 1,
-    scale_range: Optional[Tuple[float, float]] = None,
+    augment_kwargs: Optional[Dict] = None,
 ):
     env = StructureWrapper(env, structure)
     if dataset_statistics is not None:
         env = NormalizationWrapper(env, structure, dataset_statistics)
     env = ConcatenationWrapper(env, structure)
     if "image" in structure["observation"]:
-        env = ResizeImageWrapper(env, structure, scale_range=scale_range)
+        env = ResizeImageWrapper(env, structure, augment_kwargs)
     # TODO: could make this more efficient by removing if we don't have history or multiple actions.
     if n_obs is not None:
         env = HistoryWrapper(env, horizon=n_obs)
@@ -304,7 +304,7 @@ def preprocess_goal(
     goal,
     structure: Dict,
     dataset_statistics: Optional[Dict] = None,
-    scale_range: Optional[Tuple[float, float]] = None,
+    augment_kwargs: Optional[Dict] = None,
 ):
     # Processes a goal dictionary to be passed into a model
     goal = filter_by_structure(goal, structure["observation"])
@@ -323,6 +323,6 @@ def preprocess_goal(
         )
         goal["state"] = np.concatenate(tf.nest.flatten(goal["state"]), axis=-1)
     # Resize images
-    goal = _resize_images(goal, structure["observation"], scale_range=scale_range)
+    goal = _resize_images(goal, structure["observation"], **(augment_kwargs if augment_kwargs is not None else {}))
     # Add the temporal dimension
     return tf.nest.map_structure(lambda x: x[None], goal)

@@ -83,9 +83,9 @@ The following features are planned:
 * Incorporate language (choose where the instruction / encoding belongs)
 * allow for changing the action keys for different datasets. ie on bridge we want to train on `achieved_delta` but on other datasets we want `desired_delta`.
 * Allow for structure padding., ie some datasets might not have some values, set those to zero.
-* figure out if we can make the OXE shuffle buffer bigger.
-* Refactor the networks, e.g. the transformer / vit.
-* Add pretrained models (look at flax big_vision for good pretrained models.)
-* Fix seeding for random image augmentations for greater flexibility of trianing.
-* Look into order of dropout vs activation for non-ReLU functions.
-* Consider updating configs to use tuples for multi-encoders instead of -> join string.
+* Add pretrained model loading support (look at flax big_vision for good pretrained models.)
+* Fix seeding for random image augmentations for greater flexibility of training.
+* Merge Concatenate and Tokenize to a more unified class
+* Unify the convention for pooling at the end of vision encoders. Currently they are different... sad.
+* add better Ensemblize support for action heads
+* Update checkpointing to newer orbax paradigm.

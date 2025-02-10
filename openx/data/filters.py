@@ -12,3 +12,10 @@ def filter_by_ep_path(search_strings, path_key: str = "file_path"):
         return tf.strings.regex_full_match(string, pattern=".*" + search_strings + ".*")
 
     return _filter
+
+
+def quality_filter(threshold):
+    def _filter(ep):
+        return tf.cast(ep["episode_metadata"]["quality_score"] >= threshold, tf.bool)
+
+    return _filter

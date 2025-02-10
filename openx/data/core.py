@@ -1,6 +1,7 @@
+import functools
 import hashlib
 import json
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -83,7 +84,7 @@ def load_dataset(
     split: str,
     standardization_transform: Callable,
     structure: Optional[dict] = None,
-    dataset_statistics: Optional[str] = None,
+    dataset_statistics: Optional[Union[str, Dict]] = None,
     recompute_statistics: bool = False,
     num_parallel_reads: Optional[int] = tf.data.AUTOTUNE,
     num_parallel_calls: Optional[int] = tf.data.AUTOTUNE,
@@ -133,7 +134,7 @@ def load_dataset(
                 dataset_statistics = compute_dataset_statistics(
                     path, standardization_transform, recompute_statistics=recompute_statistics
                 )
-            else:
+            elif isinstance(dataset_statistics, str):
                 dataset_statistics = load_dataset_statistics(dataset_statistics)
             dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
         else:
@@ -204,12 +205,18 @@ def compute_dataset_statistics(
     save_statistics: bool = True,
 ):
     # Compute some hash of the path and other factors to determine the path.
-    hash_deps = tuple(path) if isinstance(path, list) else (path,)
-    hash_deps = sorted(hash_deps)
-    unique_hash = hashlib.sha256("".join(hash_deps).encode("utf-8"), usedforsecurity=False).hexdigest()
+    storage_path = sorted(path)[0] if isinstance(path, list) else path
+    hash_deps = "".join(sorted(path) if isinstance(path, list) else [path])
+    if isinstance(standardization_transform, functools.partial):
+        hash_deps += standardization_transform.func.__name__
+        hash_deps += ", ".join(standardization_transform.args)
+        hash_deps += ", ".join(f"{k}={v}" for k, v in standardization_transform.keywords.items())
+    else:
+        hash_deps += standardization_transform.__name__
+    unique_hash = hashlib.sha256(hash_deps.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     # See if we need to compute the dataset statistics
-    dataset_statistics_path = tf.io.gfile.join(hash_deps[0], f"dataset_statistics_{unique_hash}.json")
+    dataset_statistics_path = tf.io.gfile.join(storage_path, f"dataset_statistics_{unique_hash}.json")
     if not recompute_statistics and tf.io.gfile.exists(dataset_statistics_path):
         dataset_statistics = load_dataset_statistics(dataset_statistics_path)
     else:

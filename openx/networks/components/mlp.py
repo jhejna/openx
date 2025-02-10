@@ -58,6 +58,7 @@ class MLPResNetBlock(nn.Module):
 class SinusoidalPosEmb(nn.Module):
     features: int
     learned: bool = False
+    scale: float = 10000.0
 
     @nn.compact
     def __call__(self, x: jax.Array):
@@ -66,7 +67,7 @@ class SinusoidalPosEmb(nn.Module):
             w = self.param("kernel", nn.initializers.normal(0.2), (half_features, x.shape[-1]), jnp.float32)
             emb = 2 * jnp.pi * x @ w.T
         else:
-            emb = jnp.log(10000) / (half_features - 1)
+            emb = jnp.log(self.scale) / (half_features - 1)
             emb = jnp.exp(jnp.arange(half_features) * -emb)
             emb = x * emb
         return jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)

@@ -18,6 +18,7 @@ class RobomimicEnv(gym.Env):
         self,
         path: str,
         terminate_early: bool = False,
+        use_image_obs: Optional[bool] = None,
         horizon: Optional[int] = 500,
     ):
         super().__init__()
@@ -25,7 +26,7 @@ class RobomimicEnv(gym.Env):
         path = os.path.expanduser(path)
         with h5py.File(tf.io.gfile.GFile(path, "rb"), "r") as f:
             env_meta = json.loads(f["data"].attrs["env_args"])
-        self.use_image_obs = env_meta["env_kwargs"]["use_camera_obs"]
+        self.use_image_obs = use_image_obs if use_image_obs is not None else env_meta["env_kwargs"]["use_camera_obs"]
         self.env = env_utils.create_env_from_metadata(
             env_meta=env_meta,
             env_name=env_meta["env_name"],

@@ -60,7 +60,7 @@ def main(_):
     ### Setup Eval Envs ###
     structure = config.structure.to_dict()
     n_obs, n_action = config.dataloader.n_obs, config.dataloader.n_action
-    scale_range = config.dataloader.augment_kwargs.get("scale_range", None)
+    augment_kwargs = config.dataloader.to_dict().get("augment_kwargs", dict())
     # Determine if we are using the Octo resized dataset
     resize_shape = (256, 256) if "octo" in config.dataloader.datasets.bridge.path else None
 
@@ -79,7 +79,7 @@ def main(_):
         n_obs=n_obs,
         n_action=n_action,
         exec_horizon=max(1, n_action // 2),
-        scale_range=scale_range,
+        augment_kwargs=augment_kwargs,
     )
 
     # Determine the goal
@@ -102,7 +102,7 @@ def main(_):
         with open(f"goal_states/{goal_name}.pkl", "wb") as f:
             pickle.dump(goal, f)
 
-    goal = preprocess_goal(goal, structure, dataset_statistics, scale_range)
+    goal = preprocess_goal(goal, structure, dataset_statistics, augment_kwargs)
 
     obs, info = env.reset()
     image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)

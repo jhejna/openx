@@ -23,45 +23,53 @@ class DDPMActionHead(core.ActionHead):
     timesteps: int = 100
     clip_sample: Optional[float] = None
     variance_type: str = "fixed_large"
+    num_noise_samples: int = 1
+    projection_predicts_sequence: bool = False
 
     def setup(self):
         assert self.action_horizon is not None, "Must have action horizon set for DDPM Action Head."
         assert self.model is not None, "Must have a model for DDPM Action Head."
-        self.action_proj = nn.Dense(self.action_dim)
         betas = _squaredcos_cap_v2(self.timesteps).astype(jnp.float32)
         self.alphas = 1.0 - betas  # So betas = 1 - alphas
         self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
+        self.action_proj = nn.Dense(
+            self.action_dim * self.action_horizon if self.projection_predicts_sequence else self.action_dim
+        )
 
-    @nn.compact
-    def __call__(
-        self, obs: jax.Array, time: Optional[jax.Array] = None, action: Optional[jax.Array] = None, train: bool = True
-    ):
-        if self.is_initializing():
-            time = jnp.zeros(shape=(1, 1), dtype=int)
-            action = jnp.zeros((1, self.action_horizon, self.action_dim), dtype=jnp.float32)
-        x = self.model(obs, action=action, time=time, train=train)
-        # Handles whether or not the model predicts time.
-        pred_dim = self.action_dim if len(x.shape) == 3 else self.action_dim * self.action_horizon
-        x = nn.Dense(pred_dim)(x)
-        return x.reshape((obs.shape[0], self.action_horizon, self.action_dim))
+    def __call__(self, obs: jax.Array, action: jax.Array, time: jax.Array, train: bool = True):
+        pred = self.action_proj(self.model(obs, action=action, time=time, train=train))
+        return jnp.reshape(pred, action.shape)
 
     def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
         # handle rng creation
         time_key, noise_key = jax.random.split(self.make_rng("dropout"))
-        time = jax.random.randint(time_key, shape=(action.shape[0], 1), minval=0, maxval=self.timesteps)  # (B, 1)
-        noise = jax.random.normal(noise_key, action.shape)  # (B, T, D)
-
+        b = action.shape[0]
+        time = jax.random.randint(
+            time_key, shape=(self.num_noise_samples, b, 1), minval=0, maxval=self.timesteps
+        )  # (N, B, 1, 1)
+        noise = jax.random.normal(noise_key, (self.num_noise_samples, *action.shape))  # (B, T, D)
         # Add noise to the action according to the schedule
-        sqrt_alpha_prod = jnp.sqrt(self.alphas_cumprod[time[:, None]])  # (B, 1, 1)
-        sqrt_one_minus_alpha_prod = jnp.sqrt(1 - self.alphas_cumprod[time[:, None]])  # (B, 1, 1)
+        sqrt_alpha_prod = jnp.sqrt(self.alphas_cumprod[time[..., None]])  # (N, B, 1, 1)
+        sqrt_one_minus_alpha_prod = jnp.sqrt(1 - self.alphas_cumprod[time[..., None]])  # (N, B, 1, 1)
         if self.clip_sample is not None:
             # If we are clipping at inference time, better assume the same range for train time!
             action = jnp.clip(action, -self.clip_sample, self.clip_sample)
-        noisy_action = sqrt_alpha_prod * action + sqrt_one_minus_alpha_prod * noise
+        noisy_action = sqrt_alpha_prod * action[None] + sqrt_one_minus_alpha_prod * noise
 
-        pred = self(obs, time=time, action=noisy_action, train=train)
+        # Tile the obs for num_noise_samples
+        obs = jnp.tile(obs[None], (self.num_noise_samples,) + len(obs.shape) * (1,))
 
-        return jnp.square(pred - noise).sum(axis=-1)  # (B, T, D) --> (B, T)
+        # Reshape to a single batch dimension so model logic can remain the same.
+        # For some reason changing this seems to affect things, even though I think it shouldnt
+        # my hypothesis is that __call__ cannot be used with differing dimensions or it maybe does something? idk.
+        obs = jnp.reshape(obs, (self.num_noise_samples * b, *obs.shape[2:]))
+        noisy_action = jnp.reshape(noisy_action, (self.num_noise_samples * b, self.action_horizon, self.action_dim))
+        time = jnp.reshape(time, (self.num_noise_samples * b, 1))
+
+        # Run the network
+        pred = self(obs=obs, action=noisy_action, time=time, train=train)  # (N, B, T, D)
+        pred = jnp.reshape(pred, (self.num_noise_samples, b, self.action_horizon, self.action_dim))
+        return jnp.square(pred - noise).sum(axis=-1).mean(axis=0)  # (N, B, T, D) --> (B, T)
 
     def predict(self, obs: jax.Array, train: bool = True):
         """
@@ -80,7 +88,7 @@ class DDPMActionHead(core.ActionHead):
             alpha_prod_t_prev = jnp.where(time > 0, self.alphas_cumprod[time - 1], jnp.array(1.0, dtype=jnp.float32))
 
             # Run the model. Reduce time to (B, 1) for the model.
-            eps = module.apply(variables, obs, time=time[:, 0], action=sample, train=train)
+            eps = module.apply(variables, obs, action=sample, time=time[:, 0], train=train)
 
             # Predict x_0, clip if desired.
             orig = (sample - jnp.sqrt(1 - alpha_prod_t) * eps) / jnp.sqrt(alpha_prod_t)

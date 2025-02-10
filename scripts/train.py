@@ -63,8 +63,20 @@ def main(_):
     rng = jax.random.key(FLAGS.config.seed)
     rng = jax.random.fold_in(rng, jax.process_index())
 
+    ### Broadcast name across all hosts ###
+    if FLAGS.include_timestamp:
+        name = "{name}_{time}".format(name=FLAGS.name, time=datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    else:
+        name = FLAGS.name
+    name = multihost_utils.broadcast_one_to_all(np.array([ord(c) for c in name], dtype=np.uint8))
+    name = "".join([chr(c) for c in name])
+
+    save_path = FLAGS.path if FLAGS.path.startswith("gs://") else os.path.abspath(FLAGS.path)
+    save_path = tf.io.gfile.join(save_path, name)
+
     # Create the dataloader
     dataloader_config = FLAGS.config.dataloader.to_dict()
+
     if FLAGS.debug:
         # Limit the size of datasets for faster debugging with significantly less fileIO.
         for dataset in dataloader_config["datasets"].items():
@@ -128,7 +140,7 @@ def main(_):
         # Must dereference for pickle-ability
         structure = FLAGS.config.structure.to_dict()
         n_obs, n_action = FLAGS.config.dataloader.n_obs, FLAGS.config.dataloader.n_action
-        scale_range = FLAGS.config.dataloader.get("augment_kwargs", dict()).get("scale_range", None)
+        augment_kwargs = FLAGS.config.dataloader.to_dict().get("augment_kwargs", dict())
         exec_horizon = FLAGS.config.exec_horizon
 
         def _make_env(fn, stats):
@@ -140,7 +152,7 @@ def main(_):
                 n_obs=n_obs,
                 n_action=n_action,
                 exec_horizon=exec_horizon,
-                scale_range=scale_range,
+                augment_kwargs=augment_kwargs,
             )
 
         for env_name, env_spec in FLAGS.config.envs.to_dict().items():
@@ -157,16 +169,7 @@ def main(_):
         # No sharding for jitted predict, instead we will broadcast results across processes.
         jitted_predict = jax.jit(alg.predict)
 
-    ### Broadcast name across all hosts ###
-    if FLAGS.include_timestamp:
-        name = "{name}_{time}".format(name=FLAGS.name, time=datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-    else:
-        name = FLAGS.name
-    name = multihost_utils.broadcast_one_to_all(np.array([ord(c) for c in name], dtype=np.uint8))
-    name = "".join([chr(c) for c in name])
-
     ### Init Checkpointing ###
-    save_path = tf.io.gfile.join(os.path.abspath(FLAGS.path), name)
     if not FLAGS.debug:
         state_checkpointer = orbax.checkpoint.CheckpointManager(
             tf.io.gfile.join(save_path, "state"),
@@ -205,6 +208,8 @@ def main(_):
             writers = ("csv",)
         else:
             writers = ("csv", "tb")
+        if "eval_freq" in FLAGS.config:
+            writers = (*writers, "eval")
     else:
         writers = ()
 
@@ -222,7 +227,7 @@ def main(_):
 
         with timer("train"):
             state, info = jitted_train_step(state, batch, rng)
-            info["lr"] = lr_schedule(lr_schedule(state.step))
+            info["lr"] = lr_schedule(state.step)
             for k, v in info.items():
                 train_metrics[k].append(v)
 
@@ -232,7 +237,7 @@ def main(_):
             logger.update(train_metrics, prefix="train")
             logger.update(timer.times, prefix="time")
 
-            logger.dump(step=step, eval=False)
+            logger.dump(step=step, prefix="train")
             train_metrics = defaultdict(list)
             timer.reset()
 
@@ -251,7 +256,7 @@ def main(_):
                             val_metrics[prefix + "/" + k].append(v)
 
             logger.update(val_metrics, prefix="val")
-            logger.dump(step=step, eval=True)
+            logger.dump(step=step, prefix="val")
 
         if "eval_freq" in FLAGS.config and step % FLAGS.config.eval_freq == 0:
             for env_idx, (env_name, env) in enumerate(envs.items()):
@@ -265,7 +270,7 @@ def main(_):
                     eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
                     logger.update(eval_metrics, prefix="eval/" + env_name)
             # Dump the logger with eval metrics
-            logger.dump(step=step, eval=True)
+            logger.dump(step=step, prefix="eval")
 
         if step % FLAGS.config.save_freq == 0 and not FLAGS.debug:
             # save the train state.

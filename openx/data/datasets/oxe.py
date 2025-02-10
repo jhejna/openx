@@ -3,7 +3,7 @@ from typing import Any, Dict
 import tensorflow as tf
 import tensorflow_graphics.geometry.transformation as tft
 
-from openx.data.utils import RobotType, StateEncoding, gripper_state_from_width, rel2abs_gripper_actions
+from openx.data.utils import RobotType, StateEncoding, gripper_state_from_width, rel2abs_gripper_actions, rmat_to_rot6d
 
 """
 Note: we follow the 1 for closed, 0 for open gripper convention.
@@ -883,4 +883,44 @@ def nyu_door_opening_dataset_transform(ep: Dict[str, Any]) -> Dict[str, Any]:
     ep["observation"] = observation
     ep["action"] = action
     ep["robot"] = RobotType.UNKNOWN
+    return ep
+
+
+def droid_dataset_transform(ep: Dict):
+    state = {
+        StateEncoding.EE_POS: ep["observation"]["cartesian_position"][..., 0:3],
+        StateEncoding.EE_EULER: ep["observation"]["cartesian_position"][..., 3:6],
+        StateEncoding.GRIPPER: tf.clip_by_value(ep["observation"]["gripper_position"], 0, 1),
+        StateEncoding.JOINT_POS: ep["observation"]["joint_position"],
+    }
+
+    observation = {
+        "state": tf.nest.map_structure(lambda x: tf.cast(x, tf.float32), state),
+        "image": {
+            "wrist": ep["observation"]["wrist_image_left"],
+            "agent_1": ep["observation"]["exterior_image_1_left"],
+            "agent_2": ep["observation"]["exterior_image_2_left"],
+        },
+    }
+
+    desired_absolute_ee_euler = ep["action_dict"]["cartesian_position"][..., 3:6]
+    action = {
+        "desired_delta": {
+            StateEncoding.EE_POS: ep["action_dict"]["cartesian_velocity"][..., 0:3],
+            StateEncoding.EE_EULER: ep["action_dict"]["cartesian_velocity"][..., 3:6],
+        },
+        "desired_absolute": {
+            StateEncoding.GRIPPER: ep["action_dict"]["gripper_position"],
+            StateEncoding.EE_POS: ep["action_dict"]["cartesian_position"][..., 0:3],
+            StateEncoding.EE_EULER: desired_absolute_ee_euler,
+            StateEncoding.EE_ROT6D: rmat_to_rot6d(tft.rotation_matrix_3d.from_euler(desired_absolute_ee_euler)),
+        },
+    }
+
+    ep["observation"] = observation
+    ep["action"] = tf.nest.map_structure(lambda x: tf.cast(x, tf.float32), action)
+    ep["robot"] = RobotType.PANDA
+    ep["ep_idx"] = ep["episode_metadata"]["ep_idx"]
+    ep["quality_score"] = ep["episode_metadata"]["quality_score"]
+
     return ep

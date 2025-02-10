@@ -11,7 +11,7 @@ OBSERVATION_KEYS = ("observation", "goal", "initial_observation", "next_observat
 def _observation_transform(transform):
     """
     Takes a transform designed to work on observations and applies it to all potential observation
-    types, including: "observation", "goal", "next_observation" (not implemented yet)
+    types, including: "observation", "goal", "next_observation"
     """
 
     def fn(ep, *args, **kwargs):
@@ -62,8 +62,8 @@ def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = No
         else:
             ep["observation"][k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), ep["observation"][k])
 
-    # Apply action indexing
-    ep["action"] = tf.gather(ep["action"], action_idx)
+    # Apply action indexing and mask actions as appropriate
+    ep["action"] = tf.where(mask[..., None], tf.gather(ep["action"], action_idx), 0)
 
     # Check for other keys: initial observation, goal etc.
     for k in ("goal", "initial_observation"):
@@ -205,10 +205,19 @@ def _sample_random_bbox(
     return tf.cast(tf.stack([o_h, o_w, b_h, b_w]), dtype=tf.int32)
 
 
-def _center_bbox(img_shape, desired_shape, scale_range: Optional[Tuple[float, float]] = None):
+def _center_bbox(
+    img_shape,
+    desired_shape,
+    scale_range: Optional[Tuple[float, float]] = None,
+    aspect_ratio_range: Optional[Tuple[float, float]] = None,
+):
     im_h, im_w = img_shape[-3], img_shape[-2]
     im_h, im_w = tf.cast(im_h, dtype=tf.float32), tf.cast(im_w, dtype=tf.float32)
-    ratio = desired_shape[-1] / desired_shape[-2]  # Width / Height
+    ratio = (
+        desired_shape[-1] / desired_shape[-2]
+        if aspect_ratio_range is None
+        else (aspect_ratio_range[0] + aspect_ratio_range[1]) / 2
+    )
     scale = 1 if scale_range is None else (scale_range[1] + scale_range[0]) / 2
     b_h = tf.minimum(im_h, im_w / ratio)
     b_w = b_h * ratio
@@ -272,7 +281,7 @@ def decode_and_augment(
             return _sample_random_bbox(
                 img_shape, structure, scale_range=scale_range, aspect_ratio_range=aspect_ratio_range
             )
-        return _center_bbox(img_shape, structure, scale_range=scale_range)
+        return _center_bbox(img_shape, structure, scale_range=scale_range, aspect_ratio_range=aspect_ratio_range)
 
     # Define augmentations
     if train:

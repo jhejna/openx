@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-OBJECT_STATE_SIZE = 44  # Set to the max size across robomimic envs. ToolHang is giant.
+from openx.envs.robomimic import OBJECT_STATE_SIZE
 
 
 class RoboMimic(tfds.core.GeneratorBasedBuilder):

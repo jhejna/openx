@@ -69,8 +69,8 @@ def get_config(config_str: str = "256,0.0001,100"):
         observation_encoder=ModuleSpec.create(
             MultiEncoder,
             encoders={
-                "observation->image->agent": ModuleSpec.create(ResNet18),
-                "observation->image->wrist": ModuleSpec.create(ResNet18),
+                "observation->image->agent": ModuleSpec.create(ResNet18, num_kp=64),
+                "observation->image->wrist": ModuleSpec.create(ResNet18, num_kp=64),
                 "observation->state": None,
             },
             trunk=ModuleSpec.create(
