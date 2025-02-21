@@ -41,16 +41,17 @@ class DDPMActionHead(core.ActionHead):
         return jnp.reshape(pred, action.shape)
 
     def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
-        # handle rng creation
+        # handle rng creation, piggy back off of the dropout one.
         time_key, noise_key = jax.random.split(self.make_rng("dropout"))
         b = action.shape[0]
+        broadcast_shape = (self.num_noise_samples, b, *[1 for _ in action.shape[1:]])
         time = jax.random.randint(
-            time_key, shape=(self.num_noise_samples, b, 1), minval=0, maxval=self.timesteps
-        )  # (N, B, 1, 1)
-        noise = jax.random.normal(noise_key, (self.num_noise_samples, *action.shape))  # (B, T, D)
+            time_key, shape=(self.num_noise_samples, b), minval=0, maxval=self.timesteps
+        )  # (N, B)
+        noise = jax.random.normal(noise_key, (self.num_noise_samples, *action.shape))
         # Add noise to the action according to the schedule
-        sqrt_alpha_prod = jnp.sqrt(self.alphas_cumprod[time[..., None]])  # (N, B, 1, 1)
-        sqrt_one_minus_alpha_prod = jnp.sqrt(1 - self.alphas_cumprod[time[..., None]])  # (N, B, 1, 1)
+        sqrt_alpha_prod = jnp.reshape(jnp.sqrt(self.alphas_cumprod[time]), broadcast_shape)
+        sqrt_one_minus_alpha_prod = jnp.reshape(jnp.sqrt(1 - self.alphas_cumprod[time]), broadcast_shape)
         if self.clip_sample is not None:
             # If we are clipping at inference time, better assume the same range for train time!
             action = jnp.clip(action, -self.clip_sample, self.clip_sample)
@@ -64,7 +65,7 @@ class DDPMActionHead(core.ActionHead):
         # my hypothesis is that __call__ cannot be used with differing dimensions or it maybe does something? idk.
         obs = jnp.reshape(obs, (self.num_noise_samples * b, *obs.shape[2:]))
         noisy_action = jnp.reshape(noisy_action, (self.num_noise_samples * b, self.action_horizon, self.action_dim))
-        time = jnp.reshape(time, (self.num_noise_samples * b, 1))
+        time = jnp.reshape(time, (self.num_noise_samples * b))
 
         # Run the network
         pred = self(obs=obs, action=noisy_action, time=time, train=train)  # (N, B, T, D)
@@ -79,41 +80,49 @@ class DDPMActionHead(core.ActionHead):
         module, variables = self.unbind()
 
         def loop_body(i, args):
-            sample, rng = args
+            x_t, rng = args
             time = self.timesteps - 1 - i
-            # Note that here time is (B, 1, 1) where as in loss in is (B, 1)
-            time = jnp.broadcast_to(time, (sample.shape[0], 1, 1))
-            alpha = self.alphas[time]
-            alpha_prod_t = self.alphas_cumprod[time]
-            alpha_prod_t_prev = jnp.where(time > 0, self.alphas_cumprod[time - 1], jnp.array(1.0, dtype=jnp.float32))
 
-            # Run the model. Reduce time to (B, 1) for the model.
-            eps = module.apply(variables, obs, action=sample, time=time[:, 0], train=train)
+            # Get coefficients and reshape for broadcasting.
+            b = x_t.shape[0]
+            broadcast_shape = (b, *[1 for _ in x_t.shape[1:]])
+            time = jnp.broadcast_to(time, (b,))
+            alpha = jnp.reshape(self.alphas[time], broadcast_shape)
+            alpha_prod_t = jnp.reshape(self.alphas_cumprod[time], broadcast_shape)
+            alpha_prod_t_prev = jnp.reshape(
+                jnp.where(time > 0, self.alphas_cumprod[time - 1], jnp.array(1.0, dtype=jnp.float32)), broadcast_shape
+            )
 
-            # Predict x_0, clip if desired.
-            orig = (sample - jnp.sqrt(1 - alpha_prod_t) * eps) / jnp.sqrt(alpha_prod_t)
+            # Run the model predictions.
+            eps = module.apply(variables, obs, action=x_t, time=time, train=train)
+
+            # Predict x_0, clip if desired. Notice that this is the reverse of the loss!
+            x_0 = (x_t - jnp.sqrt(1 - alpha_prod_t) * eps) / jnp.sqrt(alpha_prod_t)
             if self.clip_sample is not None:
-                orig = jnp.clip(orig, -self.clip_sample, self.clip_sample)
+                x_0 = jnp.clip(x_0, -self.clip_sample, self.clip_sample)
 
-            # Compute x_{t-1} using x_0
+            # Compute x_{t-1} using x_0.
             orig_coeff = jnp.sqrt(alpha_prod_t_prev) * (1 - alpha) / (1 - alpha_prod_t)
             current_coeff = jnp.sqrt(alpha) * (1 - alpha_prod_t_prev) / (1 - alpha_prod_t)
 
-            prev = orig_coeff * orig + current_coeff * sample
+            x_t_minus_1 = orig_coeff * x_0 + current_coeff * x_t
 
             # Add noise according to the schedule
             variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * (1 - alpha)
             if self.variance_type == "fixed_large":
-                variance = 1 - alpha
+                variance = 1 - alpha  # This is the original diffusion, setting the variance to beta.
             elif self.variance_type == "fixed_small":
                 variance = jnp.clip(variance, a_min=1e-20)
             else:
                 raise ValueError("Invalid schedule provided")
 
             rng, key = jax.random.split(rng)
-            variance = jnp.where(time > 0, variance, jnp.zeros(eps.shape, dtype=jnp.float32))
-            prev = prev + jnp.sqrt(variance) * jax.random.normal(key, shape=sample.shape, dtype=jnp.float32)
-            return (prev, rng)
+            variance = jnp.where(
+                jnp.reshape(time, broadcast_shape) > 0, variance, jnp.zeros(variance.shape, dtype=jnp.float32)
+            )
+
+            x_t_minus_1 = x_t_minus_1 + jnp.sqrt(variance) * jax.random.normal(key, shape=x_t.shape, dtype=jnp.float32)
+            return (x_t_minus_1, rng)
 
         rng, key = jax.random.split(self.make_rng("dropout"))
         noisy_action = jax.random.normal(key, (obs.shape[0], self.action_horizon, self.action_dim), dtype=jnp.float32)

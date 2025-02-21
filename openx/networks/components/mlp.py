@@ -64,13 +64,13 @@ class SinusoidalPosEmb(nn.Module):
     def __call__(self, x: jax.Array):
         half_features = self.features // 2
         if self.learned:
-            w = self.param("kernel", nn.initializers.normal(0.2), (half_features, x.shape[-1]), jnp.float32)
-            emb = 2 * jnp.pi * x @ w.T
+            w = self.param("kernel", nn.initializers.normal(0.2), (half_features,), jnp.float32)
+            emb = 2 * jnp.pi * w
         else:
             emb = jnp.log(self.scale) / (half_features - 1)
             emb = jnp.exp(jnp.arange(half_features) * -emb)
-            emb = x * emb
-        return jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)
+        emb = x[..., None] * emb
+        return jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)  # (...., D)
 
 
 class MLPResNet(nn.Module):

@@ -56,7 +56,6 @@ def get_config(config_str: str = "256,0.0001,100"):
         n_obs=2,
         n_action=16,
         augment_kwargs=dict(scale_range=(0.85, 1.0), aspect_ratio_range=None),
-        goal_conditioned=False,
         shuffle_size=100000,
         batch_size=batch_size,
         recompute_statistics=True,
@@ -87,6 +86,7 @@ def get_config(config_str: str = "256,0.0001,100"):
             variance_type="fixed_small",
             action_dim=7,
             action_horizon=16,
+            num_noise_samples=1,
         ),
     )
 
