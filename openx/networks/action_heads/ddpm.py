@@ -40,7 +40,7 @@ class DDPMActionHead(core.ActionHead):
         pred = self.action_proj(self.model(obs, action=action, time=time, train=train))
         return jnp.reshape(pred, action.shape)
 
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
+    def loss(self, obs: jax.Array, action: jax.Array, mask: jax.Array, train: bool = True):
         # handle rng creation, piggy back off of the dropout one.
         time_key, noise_key = jax.random.split(self.make_rng("dropout"))
         b = action.shape[0]
@@ -70,7 +70,8 @@ class DDPMActionHead(core.ActionHead):
         # Run the network
         pred = self(obs=obs, action=noisy_action, time=time, train=train)  # (N, B, T, D)
         pred = jnp.reshape(pred, (self.num_noise_samples, b, self.action_horizon, self.action_dim))
-        return jnp.square(pred - noise).sum(axis=-1).mean(axis=0)  # (N, B, T, D) --> (B, T)
+        loss = jnp.square(pred - noise).sum(axis=-1).mean(axis=0)  # (N, B, T, D) --> (B, T)
+        return jnp.mean(loss * mask) / jnp.clip(jnp.mean(mask), a_min=1e-5, a_max=None)
 
     def predict(self, obs: jax.Array, train: bool = True):
         """

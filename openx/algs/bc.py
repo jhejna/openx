@@ -27,11 +27,11 @@ class BehaviorCloningModel(nn.Module):
 
     def loss(self, batch, train: bool = True):
         obs = self.observation_encoder(batch, train=train)
-        return self.action_head.loss(obs, batch["action"], train=train)
+        return self.action_head.loss(obs, batch["action"], batch["mask"], train=train)
 
     def loss_and_prediction(self, batch, train: bool = True, **kwargs):
         obs = self.observation_encoder(batch)
-        loss = self.action_head.loss(obs, batch["action"], train=train)
+        loss = self.action_head.loss(obs, batch["action"], batch["mask"], train=train)
         pred = self.action_head.predict(obs, train=train, **kwargs)
         return loss, pred
 
@@ -58,9 +58,7 @@ class BehaviorCloning(Algorithm):
         params_rng, dropout_rng = jax.random.split(rng)
 
         def _loss(params):
-            loss = state.apply_fn(params, batch, rngs=dict(params=params_rng, dropout=dropout_rng), train=True)
-            loss = loss * batch["mask"]
-            return jnp.mean(loss) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
+            return state.apply_fn(params, batch, rngs=dict(params=params_rng, dropout=dropout_rng), train=True)
 
         loss, grads = jax.value_and_grad(_loss)(state.params)
         new_state = state.apply_gradients(grads=grads)
@@ -79,8 +77,7 @@ class BehaviorCloning(Algorithm):
             train=False,
             method="loss_and_prediction",
         )
-        loss = loss * batch["mask"]
-        loss = jnp.mean(loss) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
+
         mse = batch["mask"] * jnp.square(pred - batch["action"]).sum(axis=-1)
         mse = jnp.mean(mse) / jnp.clip(jnp.mean(batch["mask"]), a_min=1e-5, a_max=None)
         return dict(loss=loss, mse=mse)

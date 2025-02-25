@@ -17,9 +17,10 @@ class L2ActionHead(core.ActionHead):
     def predict(self, obs: jax.Array, train: bool = True):
         return self(obs, train=train)
 
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
+    def loss(self, obs: jax.Array, action: jax.Array, mask: jax.Array, train: bool = True):
         pred = self(obs, train=train)
-        return jnp.square(pred - action).sum(axis=-1)  # (B, T, D) --> (B, T)
+        loss = jnp.square(pred - action).sum(axis=-1)
+        return jnp.mean(loss * mask) / jnp.clip(jnp.mean(mask), a_min=1e-5, a_max=None)
 
 
 class L1ActionHead(core.ActionHead):
@@ -34,6 +35,7 @@ class L1ActionHead(core.ActionHead):
     def predict(self, obs: jax.Array, train: bool = True):
         return self(obs, train=train)
 
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
+    def loss(self, obs: jax.Array, action: jax.Array, mask: jax.Array, train: bool = True):
         pred = self(obs, train=train)
-        return jnp.abs(pred - action).sum(axis=-1)  # (B, T, D) --> (B, T)
+        loss = jnp.abs(pred - action).sum(axis=-1)  # (B, T, D) --> (B, T)
+        return jnp.mean(loss * mask) / jnp.clip(jnp.mean(mask), a_min=1e-5, a_max=None)

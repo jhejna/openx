@@ -15,5 +15,5 @@ class ActionHead(nn.Module, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
+    def loss(self, obs: jax.Array, action: jax.Array, mask: jax.Array, train: bool = True):
         raise NotImplementedError

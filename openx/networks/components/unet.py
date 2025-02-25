@@ -81,18 +81,20 @@ class ConditionalUnet1D(nn.Module):
     mid_layers: int = 2
     kernel_size: int = 3
     n_groups: int = 8
-    time_features: int = 256
+    time_features: int | None = None
 
     @nn.compact
-    def __call__(self, obs, action, time, train: bool = False):
-        # Embed the timestep
-        time = SinusoidalPosEmb(self.time_features)(time)
-        time = nn.Dense(4 * self.time_features, kernel_init=default_init())(time)
-        time = mish(time)
-        time = nn.Dense(self.time_features, kernel_init=default_init())(time)  # (B, D)
-        # Define conditioning as time and observation
-        obs = jnp.reshape(obs, time.shape[:-1] + (-1,))  # Flattens time axis if not done already
-        cond = jnp.concatenate((obs, time), axis=-1)
+    def __call__(self, obs, action, time: jax.Array | None = None, train: bool = False):
+        if time is not None:
+            assert self.time_features is not None, "If passing time must set `time_features`."
+            time = SinusoidalPosEmb(self.time_features)(time)
+            time = nn.Dense(4 * self.time_features, kernel_init=default_init())(time)
+            time = mish(time)
+            time = nn.Dense(self.time_features, kernel_init=default_init())(time)  # (B, D)
+            # Define conditioning as time and observation
+            cond = jnp.concatenate((obs, time), axis=-1)
+        else:
+            cond = obs
 
         # Project Down
         hidden_reps = []

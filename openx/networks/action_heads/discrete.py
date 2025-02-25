@@ -49,7 +49,7 @@ class DiscreteActionHead(core.ActionHead):
             action = dist.sample(seed=key).astype(jnp.int32)
         return self.bin_centers[action]
 
-    def loss(self, obs: jax.Array, action: jax.Array, train: bool = True):
+    def loss(self, obs: jax.Array, action: jax.Array, mask: jax.Array, train: bool = True):
         logits = self(obs, train=train)  # (B, T, D, N)
 
         # Clip the actions to be in range
@@ -61,4 +61,5 @@ class DiscreteActionHead(core.ActionHead):
         action_one_hot = action_one_hot.astype(logits.dtype)
 
         logprobs = jax.nn.log_softmax(logits, axis=-1)  # (B, T, D, N)
-        return -jnp.sum(logprobs * action_one_hot, axis=(-1, -2))  # Sum over dist and action dims
+        loss = -jnp.sum(logprobs * action_one_hot, axis=(-1, -2))  # Sum over dist and action dims
+        return jnp.mean(loss * mask) / jnp.clip(jnp.mean(mask), a_min=1e-5, a_max=None)
