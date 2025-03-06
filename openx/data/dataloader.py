@@ -1,5 +1,5 @@
 import functools
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
@@ -27,6 +27,7 @@ def make_dataloader(
     repeat: bool | int = True,
     cache: bool = False,
     repeat_early: bool = False,
+    global_filter_fns: List[Callable] | None = None,
     recompute_statistics: bool = False,
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
@@ -38,8 +39,13 @@ def make_dataloader(
     # Get all datasets
     train_datasets = dict()
     val_datasets = dict()
+
+    # Create dicts for values that will be used later
     weights = dict()
     dataset_statistics = dict()
+    train_step_filters = dict()
+    val_step_filters = dict()
+
     # Parse out the repeat count
     repeat_count = None if isinstance(repeat, bool) else repeat
     repeat = repeat if isinstance(repeat, bool) else True
@@ -77,6 +83,9 @@ def make_dataloader(
             train_datasets[ds_name] = ds
             weights[ds_name] = ds_config.get("weight", 1.0)
             dataset_statistics[ds_name] = ds_stats
+            train_step_filters[ds_name] = ModuleSpec.instantiate(
+                ds_config.get("train_step_filter", ds_config.get("step_filter"))
+            )()
 
         # Add val split if present
         if ds_config.get("val_split"):
@@ -96,6 +105,9 @@ def make_dataloader(
             # No weights are used for validation datasets.
             val_datasets[ds_name] = ds
             dataset_statistics[ds_name] = ds_stats
+            val_step_filters[ds_name] = ModuleSpec.instantiate(
+                ds_config.get("val_step_filter", ds_config.get("step_filter"))
+            )()
 
     if repeat and repeat_early:
         # Repeat here, otherwise will repeat with shuffling for fused op.
@@ -153,6 +165,15 @@ def make_dataloader(
         for k, v in val_datasets.items()
     }
 
+    # Apply step level filters
+    train_datasets = {
+        k: v.filter(train_step_filters[k]) if train_step_filters[k] is not None else v
+        for k, v in train_datasets.items()
+    }
+    val_datasets = {
+        k: v.filter(val_step_filters[k]) if val_step_filters[k] is not None else v for k, v in train_datasets.items()
+    }
+
     # Now flatten the datasets.
     def _flatten_dataset(ds, num_parallel_calls):
         if use_parallel_flatten and shuffle_size > 0:
@@ -190,6 +211,13 @@ def make_dataloader(
         )
     else:
         train_dataset = train_datasets[next(iter(train_datasets.keys()))]
+
+    # Apply global filters before caching
+    if global_filter_fns is not None:
+        for filter_fn in global_filter_fns:
+            fn = ModuleSpec.instantiate(filter_fn)()
+            train_dataset.filter(fn)
+            val_datasets = {k: v.filter(fn) for k, v in val_datasets.items()}
 
     if cache:
         train_dataset = train_dataset.cache()
