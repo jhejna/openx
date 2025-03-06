@@ -85,7 +85,7 @@ def make_dataloader(
             dataset_statistics[ds_name] = ds_stats
             train_step_filters[ds_name] = ModuleSpec.instantiate(
                 ds_config.get("train_step_filter", ds_config.get("step_filter"))
-            )()
+            )
 
         # Add val split if present
         if ds_config.get("val_split"):
@@ -107,7 +107,7 @@ def make_dataloader(
             dataset_statistics[ds_name] = ds_stats
             val_step_filters[ds_name] = ModuleSpec.instantiate(
                 ds_config.get("val_step_filter", ds_config.get("step_filter"))
-            )()
+            )
 
     if repeat and repeat_early:
         # Repeat here, otherwise will repeat with shuffling for fused op.
@@ -165,15 +165,6 @@ def make_dataloader(
         for k, v in val_datasets.items()
     }
 
-    # Apply step level filters
-    train_datasets = {
-        k: v.filter(train_step_filters[k]) if train_step_filters[k] is not None else v
-        for k, v in train_datasets.items()
-    }
-    val_datasets = {
-        k: v.filter(val_step_filters[k]) if val_step_filters[k] is not None else v for k, v in train_datasets.items()
-    }
-
     # Now flatten the datasets.
     def _flatten_dataset(ds, num_parallel_calls):
         if use_parallel_flatten and shuffle_size > 0:
@@ -190,6 +181,15 @@ def make_dataloader(
         for k, v in train_datasets.items()
     }
     val_datasets = {k: _flatten_dataset(v, VAL_PARALLEL_CALLS) for k, v in val_datasets.items()}
+
+    # Apply step level filters after flattening
+    train_datasets = {
+        k: v.filter(train_step_filters[k]()) if train_step_filters[k] is not None else v
+        for k, v in train_datasets.items()
+    }
+    val_datasets = {
+        k: v.filter(val_step_filters[k]()) if val_step_filters[k] is not None else v for k, v in val_step_filters.items()
+    }
 
     # Combine the train datasets into one dataset
     total_weight = sum(weights.values())
