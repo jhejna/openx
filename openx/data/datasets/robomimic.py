@@ -4,10 +4,6 @@ from openx.data.utils import RobotType, StateEncoding
 
 
 def robomimic_dataset_transform(ep: Dict):
-    # Optional: rescale data to be in absolute space. Removing for now.
-    # action_max = np.array((0.05, 0.05, 0.05, 0.5, 0.5, 0.5, 1), dtype=np.float32) # gripper is 0 to 1
-    # action_min = np.array((-0.05, -0.05, -0.05, -0.5, -0.5, -0.5, 0), dtype=np.float32)
-    # action = (ep["action"] + 1) / 2 * (action_max - action_min) + action_min
     action = ep["action"]
     delta_ee_pos, delta_ee_euler, gripper_action = action[..., :3], action[..., 3:6], action[..., -1:]
     # ee_rmat = tfg.rotation_matrix_3d.from_quaternion(ep["observation"]["state"]["ee_quat"])
@@ -43,6 +39,5 @@ def robomimic_dataset_transform(ep: Dict):
     ep["action"] = action
     ep["robot"] = RobotType.PANDA
     ep["ep_idx"] = ep["episode_metadata"]["ep_idx"]
-    # ep["operator"] = ep["episode_metadata"]["operator"]
     ep["quality_score"] = ep["episode_metadata"]["quality_score"]
     return ep

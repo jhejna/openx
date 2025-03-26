@@ -19,3 +19,10 @@ def quality_filter(threshold):
         return tf.cast(ep["episode_metadata"]["quality_score"] >= threshold, tf.bool)
 
     return _filter
+
+
+def task_filter(task):
+    def _filter(ep):
+        return tf.cast(ep["episode_metadata"]["task"] == task, tf.bool)
+
+    return _filter

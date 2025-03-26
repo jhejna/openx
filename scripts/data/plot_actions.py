@@ -71,7 +71,7 @@ def main(_):
         for i in range(d):
             axes[i].hist(actions[:, i], bins=bins, alpha=0.75, range=hist_range, edgecolor="black")
             axes[i].set_title(
-                f"{dataset_name} Dim {i+1} {normalization_type}" + ("" if isinstance(bins, int) else " PPF")
+                f"{dataset_name} Dim {i + 1} {normalization_type}" + ("" if isinstance(bins, int) else " PPF")
             )
             axes[i].set_xlabel("Value")
             axes[i].set_ylabel("Frequency")
