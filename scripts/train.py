@@ -10,13 +10,12 @@ import numpy as np
 import optax
 import tensorflow as tf
 import tqdm
-import wandb
 from absl import app, flags
-from flax.training import orbax_utils
 from jax.experimental import compilation_cache, multihost_utils
 from ml_collections import config_flags
 from orbax import checkpoint as ocp
 
+import wandb
 from openx.data.dataloader import make_dataloader
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy
@@ -61,7 +60,7 @@ def main(_):
             options=ocp.CheckpointManagerOptions(max_to_keep=1, create=True),
         )
         weights_checkpointer = ocp.CheckpointManager(save_path)
-        start_step = state_checkpointer.latest_step()
+        start_step = 0 if state_checkpointer.latest_step() is None else state_checkpointer.latest_step()
     else:
         start_step = 0
 
@@ -126,12 +125,7 @@ def main(_):
     if start_step != 0:
         # restore if we need to.
         state = jax.tree.map(lambda x: jax.device_put(x, rep_sharding), state)
-        restore_kwargs = {
-            "restore_args": ocp.checkpoint_utils.construct_restore_args(
-                state.params, jax.tree.map(lambda _: rep_sharding, state)
-            )
-        }
-        state = state_checkpointer.restore(start_step, state, restore_kwargs=restore_kwargs)
+        state = state_checkpointer.restore(start_step, args=ocp.args.StandardRestore(state))
 
     # Create the train and val steps.
     jitted_train_step = jax.jit(
@@ -204,12 +198,12 @@ def main(_):
             # See if a wandb log file exists
             wandb_path = tf.io.gfile.join(save_path, "wandb_id.txt")
             if start_step != 0:
-                with tf.io.gfile.Gfile(wandb_path, "r") as f:
-                    wandb_run = wandb.Api().run(f.read())
+                with tf.io.gfile.GFile(wandb_path, "r") as f:
+                    wandb_run = wandb.Api().run("{project}/{id}".format(project=FLAGS.project, id=f.read()))
                 wandb.init(project=wandb_run.project, id=wandb_run.id, entity=wandb_run.entity, resume="must")
             else:
                 wandb.init(config=FLAGS.config.to_dict(), project=FLAGS.project, name=FLAGS.name, mode="online")
-                with tf.io.gfile.Gfile(wandb_path, "r") as f:
+                with tf.io.gfile.GFile(wandb_path, "w") as f:
                     f.write(wandb.run.id)
             writers = ("csv", "wandb")
         else:
@@ -226,7 +220,9 @@ def main(_):
 
     # Training constants
     train_metrics = defaultdict(list)
-    for i in tqdm.tqdm(range(start_step, FLAGS.config.steps), total=FLAGS.config.steps, dynamic_ncols=True):
+    for i in tqdm.tqdm(
+        range(start_step, FLAGS.config.steps), initial=start_step, total=FLAGS.config.steps, dynamic_ncols=True
+    ):
         rng = jax.random.fold_in(rng, i)
 
         with timer("dataset"):
@@ -282,12 +278,8 @@ def main(_):
         if step % FLAGS.config.save_freq == 0 and not FLAGS.debug:
             # save the train state.
             with timer("save"):
-                state_checkpointer.save(
-                    step, state, save_kwargs=dict(save_args=orbax_utils.save_args_from_target(state))
-                )
-                weights_checkpointer.save(
-                    step, state.params, save_kwargs=dict(save_args=orbax_utils.save_args_from_target(state.params))
-                )
+                state_checkpointer.save(step, args=ocp.args.StandardSave(state))
+                weights_checkpointer.save(step, args=ocp.args.StandardSave(state.params))
 
 
 if __name__ == "__main__":

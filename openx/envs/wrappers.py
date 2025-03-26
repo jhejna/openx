@@ -101,15 +101,26 @@ class RHCWrapper(gym.Wrapper):
             infos["success"] = any(infos["success"])
         return obs, total_reward, done, trunc, infos
 
+    def reset(self, *args, **kwargs):
+        obs, info = self.env.reset(*args, **kwargs)
+        infos = [info]
+        infos = {k: [dic[k] for dic in infos] for k in infos[0]}
+        # Explicitly reduce success so we log it.
+        if "success" in infos:
+            infos["success"] = any(infos["success"])
+        return obs, infos
+
 
 class StructureWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
         structure: Dict,
+        add_raw: bool = False,
     ):
         super().__init__(env)
         self.structure = structure
+        self.add_raw = add_raw
         self.observation_space = convert_to_space(
             filter_by_structure(self.env.observation_space, structure["observation"])
         )
@@ -121,10 +132,16 @@ class StructureWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, done, trunc, info = self.env.step(action)
+        if self.add_raw:
+            info["raw_obs"] = obs
+            info["raw_action"] = action
         return self._standardize_structure(obs), reward, done, trunc, info
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
+        if self.add_raw:
+            info["raw_obs"] = obs
+            info["raw_action"] = None
         return self._standardize_structure(obs), info
 
 
@@ -285,8 +302,9 @@ def wrap_env(
     n_action: int = 1,
     exec_horizon: int = 1,
     augment_kwargs: Optional[Dict] = None,
+    add_raw: bool = False,
 ):
-    env = StructureWrapper(env, structure)
+    env = StructureWrapper(env, structure, add_raw=add_raw)
     if dataset_statistics is not None:
         env = NormalizationWrapper(env, structure, dataset_statistics)
     env = ConcatenationWrapper(env, structure)

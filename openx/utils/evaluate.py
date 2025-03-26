@@ -46,7 +46,7 @@ def load_checkpoint(path: str, step: int | None = None, sharding: jax.sharding.S
         # If sharding is supplied, shard the state so correct restore args are created.
         state = jax.tree.map(lambda x: jax.device_put(x, sharding), state)
 
-    checkpointer = ocp.CheckpointManager(path, ocp.PyTreeCheckpointer())
+    checkpointer = ocp.CheckpointManager(path)
     step = step if step is not None else checkpointer.latest_step()
     params = checkpointer.restore(step, args=ocp.args.StandardRestore(state.params))
     state = state.replace(params=params)
