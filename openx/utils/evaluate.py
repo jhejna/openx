@@ -9,7 +9,7 @@ import numpy as np
 import optax
 import tensorflow as tf
 from ml_collections import ConfigDict
-from orbax import checkpoint
+from orbax import checkpoint as ocp
 
 from openx.data.core import load_dataset_statistics
 from openx.utils.spec import recursively_instantiate
@@ -43,19 +43,12 @@ def load_checkpoint(path: str, step: int | None = None, sharding: jax.sharding.S
 
     state = alg.init(example_batch, tx, rng)
     if sharding is not None:
-        # If sharding is supplied, shard the state and add restore args for every item.
+        # If sharding is supplied, shard the state so correct restore args are created.
         state = jax.tree.map(lambda x: jax.device_put(x, sharding), state)
-        restore_kwargs = {
-            "restore_args": checkpoint.checkpoint_utils.construct_restore_args(
-                state.params, jax.tree.map(lambda _: sharding, state.params)
-            )
-        }
-    else:
-        restore_kwargs = {}
 
-    checkpointer = checkpoint.CheckpointManager(path, checkpoint.PyTreeCheckpointer())
+    checkpointer = ocp.CheckpointManager(path, ocp.PyTreeCheckpointer())
     step = step if step is not None else checkpointer.latest_step()
-    params = checkpointer.restore(step, state.params, restore_kwargs=restore_kwargs)
+    params = checkpointer.restore(step, args=ocp.args.StandardRestore(state.params))
     state = state.replace(params=params)
 
     return alg, state, dataset_statistics, config

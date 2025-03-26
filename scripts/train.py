@@ -1,4 +1,3 @@
-import datetime
 import functools
 import json
 import os
@@ -9,15 +8,15 @@ import gymnasium as gym
 import jax
 import numpy as np
 import optax
-import orbax
 import tensorflow as tf
 import tqdm
+import wandb
 from absl import app, flags
 from flax.training import orbax_utils
 from jax.experimental import compilation_cache, multihost_utils
 from ml_collections import config_flags
+from orbax import checkpoint as ocp
 
-import wandb
 from openx.data.dataloader import make_dataloader
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy
@@ -28,7 +27,6 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("path", "/tmp/test/", "Path to save logs and checkpoints.")
 flags.DEFINE_string("name", "train", "Name of the experiment")
 flags.DEFINE_string("project", "openx", "WandB project to save logs to.")
-flags.DEFINE_bool("include_timestamp", True, "Include timestamp in the experiment name.")
 flags.DEFINE_bool("debug", False, "Whether or not to enable debug mode.")
 # Always lock the config to avoid subtle bugs
 config_flags.DEFINE_config_file(
@@ -49,34 +47,32 @@ def main(_):
     rep_spec = jax.sharding.PartitionSpec()
     rep_sharding = jax.sharding.NamedSharding(mesh, rep_spec)
 
-    def shard(batch):
-        batch = jax.tree.map(lambda x: x._numpy(), batch)
-        return multihost_utils.host_local_array_to_global_array(batch, mesh, dp_spec)
-
     # Prevent tensorflow from using GPUs
     tf.config.set_visible_devices([], "GPU")
 
-    # Make sure each process loads different data.
-    # TODO(jhejna) If we have a resume ID, make sure that we restore the final step.
-    tf.random.set_seed(FLAGS.config.seed + jax.process_index())
-    np.random.seed(FLAGS.config.seed + jax.process_index())
-    rng = jax.random.key(FLAGS.config.seed)
+    # Determine the save path
+    save_path = FLAGS.path if FLAGS.path.startswith("gs://") else os.path.abspath(FLAGS.path)
+    save_path = tf.io.gfile.join(save_path, FLAGS.name)
+
+    ### Init Checkpointing ###
+    if not FLAGS.debug:
+        state_checkpointer = ocp.CheckpointManager(
+            tf.io.gfile.join(save_path, "state"),
+            options=ocp.CheckpointManagerOptions(max_to_keep=1, create=True),
+        )
+        weights_checkpointer = ocp.CheckpointManager(save_path)
+        start_step = state_checkpointer.latest_step()
+    else:
+        start_step = 0
+
+    ### Set seeds, different per process ###
+    tf.random.set_seed(start_step + FLAGS.config.seed + jax.process_index())
+    np.random.seed(start_step + FLAGS.config.seed + jax.process_index())
+    rng = jax.random.key(start_step + FLAGS.config.seed)
     rng = jax.random.fold_in(rng, jax.process_index())
 
-    ### Broadcast name across all hosts ###
-    if FLAGS.include_timestamp:
-        name = "{name}_{time}".format(name=FLAGS.name, time=datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-    else:
-        name = FLAGS.name
-    name = multihost_utils.broadcast_one_to_all(np.array([ord(c) for c in name], dtype=np.uint8))
-    name = "".join([chr(c) for c in name])
-
-    save_path = FLAGS.path if FLAGS.path.startswith("gs://") else os.path.abspath(FLAGS.path)
-    save_path = tf.io.gfile.join(save_path, name)
-
-    # Create the dataloader
+    ### Create the dataloader, limiting size for debug ###
     dataloader_config = FLAGS.config.dataloader.to_dict()
-
     if FLAGS.debug:
         # Limit the size of datasets for faster debugging with significantly less fileIO.
         for dataset in dataloader_config["datasets"].items():
@@ -91,14 +87,18 @@ def main(_):
         **dataloader_config, structure=FLAGS.config.structure.to_dict(), split_for_jax=True
     )
 
-    # Create the data iterators
-    # Note that we directly get the numpy representation from tensorflow to avoid a copy.
+    # Create the data iterators, avoiding copy
+    def shard(batch):
+        batch = jax.tree.map(lambda x: x._numpy(), batch)
+        return multihost_utils.host_local_array_to_global_array(batch, mesh, dp_spec)
+
     train_iterator = map(shard, train_dataset)
     val_iterators = {name: map(shard, ds) for name, ds in val_datasets.items()}
 
     # Deque the first batch to use as an example for instantiating the model
     example_batch = jax.tree.map(lambda x: x[:1], multihost_utils.process_allgather(next(train_iterator)))
 
+    ### Construct the state ###
     # Instantiate the model
     alg = recursively_instantiate(FLAGS.config.alg.to_dict())
 
@@ -121,6 +121,17 @@ def main(_):
 
     rng, init_rng = jax.random.split(rng)
     state = alg.init(example_batch, tx, init_rng)
+
+    # Restore if needed
+    if start_step != 0:
+        # restore if we need to.
+        state = jax.tree.map(lambda x: jax.device_put(x, rep_sharding), state)
+        restore_kwargs = {
+            "restore_args": ocp.checkpoint_utils.construct_restore_args(
+                state.params, jax.tree.map(lambda _: rep_sharding, state)
+            )
+        }
+        state = state_checkpointer.restore(start_step, state, restore_kwargs=restore_kwargs)
 
     # Create the train and val steps.
     jitted_train_step = jax.jit(
@@ -169,15 +180,6 @@ def main(_):
         # No sharding for jitted predict, instead we will broadcast results across processes.
         jitted_predict = jax.jit(alg.predict)
 
-    ### Init Checkpointing ###
-    if not FLAGS.debug:
-        state_checkpointer = orbax.checkpoint.CheckpointManager(
-            tf.io.gfile.join(save_path, "state"),
-            orbax.checkpoint.PyTreeCheckpointer(),
-            options=orbax.checkpoint.CheckpointManagerOptions(max_to_keep=1, create=True),
-        )
-        weights_checkpointer = orbax.checkpoint.CheckpointManager(save_path, orbax.checkpoint.PyTreeCheckpointer())
-
     ### Worker Saves Statistics, Configs, ExBatch ###
     if jax.process_index() == 0 and not FLAGS.debug:
         # Save the example batch
@@ -199,17 +201,22 @@ def main(_):
 
         # Setup logging
         if os.environ.get("WANDB_API_KEY") is not None:
-            wandb.init(
-                config=FLAGS.config.to_dict(),
-                project=FLAGS.project,
-                name=name,
-                mode="online",
-            )
-            writers = ("csv",)
+            # See if a wandb log file exists
+            wandb_path = tf.io.gfile.join(save_path, "wandb_id.txt")
+            if start_step != 0:
+                with tf.io.gfile.Gfile(wandb_path, "r") as f:
+                    wandb_run = wandb.Api().run(f.read())
+                wandb.init(project=wandb_run.project, id=wandb_run.id, entity=wandb_run.entity, resume="must")
+            else:
+                wandb.init(config=FLAGS.config.to_dict(), project=FLAGS.project, name=FLAGS.name, mode="online")
+                with tf.io.gfile.Gfile(wandb_path, "r") as f:
+                    f.write(wandb.run.id)
+            writers = ("csv", "wandb")
         else:
+            # Otherwise log with tensorboard
             writers = ("csv", "tb")
         if "eval_freq" in FLAGS.config:
-            writers = (*writers, "eval")
+            writers = (*writers, "eval")  # Add the eval writer.
     else:
         writers = ()
 
@@ -219,7 +226,7 @@ def main(_):
 
     # Training constants
     train_metrics = defaultdict(list)
-    for i in tqdm.tqdm(range(FLAGS.config.steps), total=FLAGS.config.steps, dynamic_ncols=True):
+    for i in tqdm.tqdm(range(start_step, FLAGS.config.steps), total=FLAGS.config.steps, dynamic_ncols=True):
         rng = jax.random.fold_in(rng, i)
 
         with timer("dataset"):

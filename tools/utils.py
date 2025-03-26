@@ -76,7 +76,6 @@ def get_scripts(args: argparse.Namespace) -> List[Tuple[str, Dict]]:
                 # Special handling for ML Collections. This gets passed as a config string.
                 script_args["config"] = config.pop("config") + ":" + ",".join(config.values())
                 script_args["name"] = '"' + name + '"'
-                script_args["include_timestamp"] = "false"
             else:
                 script_args.update(config)  # Update the default config with the sweep
                 if "path" in script_args:

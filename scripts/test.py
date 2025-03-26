@@ -56,8 +56,12 @@ def main(_):
             env_fn = functools.partial(
                 _make_env, fn=ModuleSpec.instantiate(env_spec), stats=dataset_statistics[env_name]
             )
-            vec_env_cls = gym.vector.AsyncVectorEnv if FLAGS.n_eval_proc > 1 else gym.vector.SyncVectorEnv
-            env = vec_env_cls([env_fn for _ in range(FLAGS.n_eval_proc)], context="spawn", shared_memory=True)
+            vec_env_cls = (
+                functools.partial(gym.vector.AsyncVectorEnv, context="spawn", shared_memory=True)
+                if FLAGS.n_eval_proc > 1
+                else gym.vector.SyncVectorEnv
+            )
+            env = vec_env_cls([env_fn for _ in range(FLAGS.n_eval_proc)])
             eval_metrics = eval_policy(env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep)
             eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
             print("#########", env_name, "#########")

@@ -7,7 +7,7 @@ import tensorflow_datasets as tfds
 from openx.utils.spec import ModuleSpec
 
 from . import transforms
-from .core import STANDARD_STRUCTURE, load_dataset
+from .core import STANDARD_STRUCTURE, compute_dataset_statistics, load_dataset
 
 VAL_PARALLEL_CALLS = 1
 
@@ -28,6 +28,7 @@ def make_dataloader(
     cache: bool = False,
     repeat_early: bool = False,
     global_filter_fns: List[Callable] | None = None,
+    global_dataset_statistics: str | List[str] | None = None,
     recompute_statistics: bool = False,
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
@@ -55,13 +56,27 @@ def make_dataloader(
         repeat_early = False
         discard_fraction = 0.0
 
+    # If global dataset statistics is in the list of datasets, compute it.
+    if isinstance(global_dataset_statistics, str) and global_dataset_statistics in datasets:
+        global_dataset_statistics = [global_dataset_statistics]
+    if isinstance(global_dataset_statistics, list):
+        # If its a list, then we have a list of names.
+        ds_configs = [datasets[ds_name] for ds_name in global_dataset_statistics]
+        global_dataset_statistics = compute_dataset_statistics(
+            [ds_config["path"] for ds_config in ds_configs],
+            standardization_transform=ModuleSpec.instantiate(ds_configs[0]["transform"]),
+            recompute_statistics=recompute_statistics,
+        )
+
     # Loop through all datasets to construct dataloader
     for ds_name, ds_config in datasets.items():
         assert "path" in ds_config and "transform" in ds_config
         assert "train_split" in ds_config or "val_split" in ds_config
         path = ds_config["path"]
         transform_fn = ModuleSpec.instantiate(ds_config["transform"])
-        dataset_statistics_path = ds_config.get("dataset_statistics")
+        dataset_statistics_path = (
+            global_dataset_statistics if global_dataset_statistics is not None else ds_config.get("dataset_statistics")
+        )
 
         # Add train split
         if ds_config.get("train_split"):
@@ -188,7 +203,7 @@ def make_dataloader(
         for k, v in train_datasets.items()
     }
     val_datasets = {
-        k: v.filter(val_step_filters[k]()) if val_step_filters[k] is not None else v for k, v in val_step_filters.items()
+        k: v.filter(val_step_filters[k]()) if val_step_filters[k] is not None else v for k, v in val_datasets.items()
     }
 
     # Combine the train datasets into one dataset

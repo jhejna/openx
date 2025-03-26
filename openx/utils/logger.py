@@ -118,6 +118,7 @@ class CSVWriter(Writer):
 class WandBWriter(Writer):
     def __init__(self, path: str, on_prefix: str | None = None):
         super().__init__(path, on_prefix=on_prefix)
+        assert WANDB_IMPORTED, "wandb must be installed to use WandBWriter."
 
     def _dump(self, step: int) -> None:
         wandb.log(self.values, step=step)
@@ -129,12 +130,8 @@ class WandBWriter(Writer):
 
 class Logger(object):
     def __init__(self, path: str, writers: Iterable[str] = ("csv",)):
-        writers = set(writers)  # Avoid duplication
-        if WANDB_IMPORTED and wandb.run is not None:
-            writers.add("wandb")  # If wandb is initialized, make sure we have it.
-
         self.writers = []
-        for writer in writers:
+        for writer in set(writers):
             self.writers.append(
                 {
                     "tb": TensorBoardWriter,

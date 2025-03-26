@@ -98,7 +98,7 @@ def load_dataset(
     If you pass in a structure, it garuntees that the resulting dataset will follow that exact structure.
     """
     if isinstance(path, list):
-        builder = tfds.builder_from_directories(builder_dir=path)
+        builder = tfds.builder_from_directories(builder_dirs=path)
     else:
         builder = tfds.builder_from_directory(builder_dir=path)
     dataset = builder.as_dataset(
@@ -188,6 +188,8 @@ def load_dataset(
 def load_dataset_statistics(path):
     if not path.endswith(".json"):
         path = tf.io.gfile.join(path, "dataset_statistics.json")
+    if not tf.io.gfile.exists(path):
+        raise ValueError("Tried to load dataset statistics from " + path + " but path did not exist.")
     with tf.io.gfile.GFile(path, "r") as f:
         dataset_statistics = json.load(f)
 
