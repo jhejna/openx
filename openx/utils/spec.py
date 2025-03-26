@@ -100,8 +100,7 @@ def _import_from_string(module_string: str, name: str):
         return getattr(module, name)
     except Exception as e:
         raise ValueError(
-            f"Could not import {module_string}:{name}."
-            "If it is a partial, try using a string formatted as `module:name`"
+            f"Could not import {module_string}:{name}.If it is a partial, try using a string formatted as `module:name`"
         ) from e
 
 

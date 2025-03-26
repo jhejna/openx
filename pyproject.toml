@@ -20,7 +20,7 @@ classifiers = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 lint.select = ["A", "B", "C90", "E", "F", "I", "I001", "N", "RUF", "W", "RET", "TC", "PL", "SIM", "TC", "NPY"]
 lint.ignore = ["A002", "A003", "B027", "C901", "RUF012", "PLR", "NPY002"]
 

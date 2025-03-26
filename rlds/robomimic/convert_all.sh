@@ -16,8 +16,6 @@ ROBOMIMIC_DATASETS=(
 source /path/to/miniconda3/bin/activate
 conda activate openx
 
-cd path/to/rlds/robomimic
-
 mkdir -p "$OUTPUT_DIR"
 
 # Loop over all files in the input folder

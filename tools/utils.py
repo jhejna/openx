@@ -63,9 +63,9 @@ def get_scripts(args: argparse.Namespace) -> List[Tuple[str, Dict]]:
 
     scripts = []
     parsed_args = parse_vars(args.arguments)
-    assert not (
-        args.entry_point == DEFAULT_ENTRY_POINT and "config" in parsed_args and args.sweep is not None
-    ), "Cannot have both a config and a sweep"
+    assert not (args.entry_point == DEFAULT_ENTRY_POINT and "config" in parsed_args and args.sweep is not None), (
+        "Cannot have both a config and a sweep"
+    )
     if args.entry_point == DEFAULT_ENTRY_POINT and parsed_args.get("config", "").endswith(".json"):
         args.sweep = parsed_args.pop("config")  # Remove the config, and pass it to sweep.
 

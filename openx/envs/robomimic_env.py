@@ -122,4 +122,4 @@ class RobomimicEnv(gym.Env):
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset()
-        return self._format_obs(obs), dict()
+        return self._format_obs(obs), dict(success=False)

@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from openx.envs.robomimic import OBJECT_STATE_SIZE
+from openx.envs.robomimic_env import OBJECT_STATE_SIZE
 
 
 class RoboMimic(tfds.core.GeneratorBasedBuilder):

@@ -279,10 +279,10 @@ def make_dataloader(
     # Then, add memory limits for autotune.
     if restrict_memory:
         train_options = tf.data.Options()
-        train_options.autotune.ram_budget = int(4 * 1024 * 1024 * 1024)  # GB -> Bytes
+        train_options.autotune.ram_budget = 4 * 1024 * 1024 * 1024  # GB -> Bytes
         train_dataset = train_dataset.with_options(train_options)
         val_options = tf.data.Options()
-        val_options.autotune.ram_budget = int(1 * 1024 * 1024 * 1024)  # GB -> Bytes
+        val_options.autotune.ram_budget = 1 * 1024 * 1024 * 1024  # GB -> Bytes
         val_datasets = {k: v.with_options(val_options) for k, v in val_datasets.items()}
 
     # finally add prefetch as desired

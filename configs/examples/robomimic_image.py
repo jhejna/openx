@@ -6,7 +6,7 @@ from ml_collections import ConfigDict
 from openx.algs.bc import BehaviorCloning
 from openx.data.datasets.robomimic import robomimic_dataset_transform
 from openx.data.utils import NormalizationType, StateEncoding
-from openx.envs.robomimic import RobomimicEnv
+from openx.envs.robomimic_env import RobomimicEnv
 from openx.networks.action_heads.ddpm import DDPMActionHead
 from openx.networks.components.mlp import MLP
 from openx.networks.components.resnet import ResNet18

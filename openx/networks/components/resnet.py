@@ -183,9 +183,9 @@ class ResNet(nn.Module):
 
     @nn.compact
     def __call__(self, obs, goal: Optional[jax.Array] = None, train: bool = True):
-        assert (
-            sum((self.attention_pool, self.average_pool, self.num_kp is not None)) <= 1
-        ), "Multiple types of pooling provided. Can only use one."
+        assert sum((self.attention_pool, self.average_pool, self.num_kp is not None)) <= 1, (
+            "Multiple types of pooling provided. Can only use one."
+        )
 
         # Initialize layers
         conv = partial(self.conv, use_bias=False, dtype=self.dtype)

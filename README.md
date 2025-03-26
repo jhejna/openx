@@ -20,7 +20,7 @@ If you are on TPU, instead run:
 pip install --upgrade "jax[tpu]==0.4.37" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 ```
 
-**Robomimic**
+### RoboMimic
 We benchmarked some of our implementations against Pytorch versions in robomimic. Installing the correct robomimic version corresponding to that used in the [original Robomimic paper](https://arxiv.org/abs/2108.03298) is pain. We provide more details commented out in the requirements.txt file, but the basics are as follows.
 
 First, follow the instructions to install `mujoco210_linux` found [here](https://github.com/openai/mujoco-py)
@@ -31,6 +31,8 @@ sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
 
 Then, install robosuite, robomimic, and needed dependencies.
 ```
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
 # Dependencies
 pip install "mujoco-py<2.2,>=2.0"
 pip install cython==0.29.37
@@ -50,10 +52,45 @@ git checkout v0.2.0
 pip install -e . --no-deps # Ignore
 cd ..
 ```
+and enable `USE_MUJOCO_PY` in `setup_shell.sh`.
 
 Then repeatedly try to import mujoco_py, robosuite, and robomimic until it works. There are a few manual changes to the code in robosuite and robomimic you will need to make:
 1. Comment out all references to EGL Probe if you are using TPU.
 2. You will need to change some imports to `from collections.abc` from `from collections`. This is because some typing hints used in robosuite and robomimic were deprecated in Python 3.11.
+
+A few fixes if this doesn't immediately work:
+
+```
+conda install -c conda-forge gcc=12.1.0  # No longer used as of 12/24
+```
+
+### Libero
+If you want to use the libero benchmark, you have to follow separate installation instructions. Note that we parse these dependencies out carefully to prevent conflicts. For example, we make sure to install the CPU only version of PyTorch.
+
+For TPUs, ensure the following are installed:
+```
+sudo apt install libosmesa6-dev libgl1-mesa-glx libglfw3 libgl1-mesa-dev libsm6 libxext6
+```
+
+Then install the following python dependencies (in this order):
+```
+pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+pip install robosuite==1.4.0 bddl==1.0.1 future "easydict==1.9" termcolor
+
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO
+cd LIBERO
+pip install -e . --no-deps
+```
+
+To avoid installing gym, I then comment out the line `from .venv import SubprocVectorEnv, DummyVectorEnv` in `LIBERO/libero/libero/envs/venv.py`.
+
+If you encounter an error relating to `AttributeError: 'NoneType' object has no attribute 'glGetError'` when using `MUJOCO_GL="osmesa"` try the following fix:
+
+When creating your base conda environment, use the following command.
+```
+conda create -n openx-libero python=3.11 conda-forge::mesalib numba::numba "numpy<2.0"
+```
+and do not enable `USE_MUJOCO_PY` in `setup_shell.sh`.
 
 ## Usage
 
