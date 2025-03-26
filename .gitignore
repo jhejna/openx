@@ -1,6 +1,8 @@
 # Custom Ignores
-run_scripts/
 wandb/
+datasets/
+output/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

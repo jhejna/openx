@@ -47,7 +47,7 @@ cd ..
 
 # Robomimic
 git clone https://github.com/ARISE-Initiative/robomimic/
-cd robosuite
+cd robomimic
 git checkout v0.2.0
 pip install -e . --no-deps # Ignore
 cd ..
@@ -94,9 +94,9 @@ and do not enable `USE_MUJOCO_PY` in `setup_shell.sh`.
 
 ## Usage
 
-You can train a Behavior Cloning model with
+You can train a model with
 ```
-python scripts/train_bc.py --config path/to/config:config_str --path save/path --name name/on/wandb --project project/on/wandb
+python scripts/train.py --config path/to/config:config_str --path save/path --name name/on/wandb --project project/on/wandb
 ```
 
 Example config files can be found in `configs`.

@@ -5,6 +5,7 @@ from ml_collections import ConfigDict
 
 from openx.algs.bc import BehaviorCloning
 from openx.data.datasets.libero import libero_dataset_transform
+from openx.data.filters import task_filter
 from openx.data.utils import NormalizationType, StateEncoding
 from openx.envs.libero_env import LiberoEnv
 from openx.networks.action_heads.ddpm import DDPMActionHead
@@ -42,21 +43,21 @@ def get_config(config_str: str = "libero_10,KITCHEN_SCENE3_turn_on_the_stove_and
     }
 
     dataloader = dict(
-        datasets=dict(
-            KITCHEN_SCENE3_turn_on_the_stove_and_put_the_moka_pot_on_it=dict(
-                path="/iliad_nfs/jhejna/datasets/libero_rlds/{benchmark}/1.0.0".format(benchmark=benchmark),
+        datasets={
+            task: dict(
+                path="path/to/datasets/libero_rlds/{benchmark}/1.0.0".format(benchmark=benchmark),
                 train_split="train",
                 transform=ModuleSpec.create(libero_dataset_transform),
-                # filter=ModuleSpec.create(task_filter, task)
-            ),
-        ),
+                filter=ModuleSpec.create(task_filter, task),
+            )
+        },
         n_obs=2,
         n_action=16,
         augment_kwargs=dict(scale_range=(0.85, 1.0), aspect_ratio_range=None),
         shuffle_size=100000,
         batch_size=256,
-        recompute_statistics=True,
-        cache=True,  # Small enough to stay in memory
+        recompute_statistics=False,
+        cache=False,  # Small enough to stay in memory
         prefetch=tf.data.AUTOTUNE,  # Enable prefetch.
     )
 

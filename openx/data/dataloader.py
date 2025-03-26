@@ -26,7 +26,6 @@ def make_dataloader(
     discard_fraction: float = 0.0,
     repeat: bool | int = True,
     cache: bool = False,
-    repeat_early: bool = False,
     global_filter_fns: List[Callable] | None = None,
     global_dataset_statistics: str | List[str] | None = None,
     recompute_statistics: bool = False,
@@ -50,11 +49,6 @@ def make_dataloader(
     # Parse out the repeat count
     repeat_count = None if isinstance(repeat, bool) else repeat
     repeat = repeat if isinstance(repeat, bool) else True
-
-    # If Cache option is set, ensure valid parameters
-    if cache:
-        repeat_early = False
-        discard_fraction = 0.0
 
     # If global dataset statistics is in the list of datasets, compute it.
     if isinstance(global_dataset_statistics, str) and global_dataset_statistics in datasets:
@@ -124,11 +118,6 @@ def make_dataloader(
                 ds_config.get("val_step_filter", ds_config.get("step_filter"))
             )
 
-    if repeat and repeat_early:
-        # Repeat here, otherwise will repeat with shuffling for fused op.
-        train_datasets = {k: v.repeat(count=repeat_count) for k, v in train_datasets.items()}
-        val_datasets = {k: v.repeat(count=repeat_count) for k, v in val_datasets.items()}
-
     # Next, chunk all of the datasets and dump steps if needed.
     # We'll also add the dataset ID here for fun.
     def _stepify(ep, dataset_id):
@@ -151,7 +140,7 @@ def make_dataloader(
         ep = tf.nest.map_structure(lambda x: x[:-1], ep)
 
         # Shuffle and discard.
-        if discard_fraction > 0:
+        if not cache and discard_fraction > 0:
             ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
             num_to_keep = tf.maximum(tf.cast(ep_len, tf.float32) * (1 - discard_fraction), 1)
             num_to_keep = tf.cast(num_to_keep, tf.int32)
@@ -206,6 +195,11 @@ def make_dataloader(
         k: v.filter(val_step_filters[k]()) if val_step_filters[k] is not None else v for k, v in val_datasets.items()
     }
 
+    # Cache each dataset if desired.
+    if cache:
+        train_datasets = {k: v.cache() for k, v in train_datasets.items()}
+        val_datasets = {k: v.cache() for k, v in val_datasets.items()}
+
     # Combine the train datasets into one dataset
     total_weight = sum(weights.values())
     weights = {k: v / total_weight for k, v in weights.items()}
@@ -218,25 +212,23 @@ def make_dataloader(
 
     if len(train_datasets) > 1:
         order = sorted(list(train_datasets.keys()))
+        if repeat:  # Repeat datasets early so we respect dataset weights.
+            train_datasets = {k: v.repeat(count=repeat_count) for k, v in train_datasets.items()}
         train_dataset = tf.data.Dataset.sample_from_datasets(
             [train_datasets[p] for p in order],
             weights=[weights[p] for p in order],
-            stop_on_empty_dataset=repeat and not cache,  # only stop if we are repeating.
+            stop_on_empty_dataset=(not repeat) or (isinstance(repeat_count, int)),
             rerandomize_each_iteration=shuffle_size > 0,
         )
     else:
         train_dataset = train_datasets[next(iter(train_datasets.keys()))]
 
-    # Apply global filters before caching
+    # Apply global filters. NOTE: these are not cached.
     if global_filter_fns is not None:
         for filter_fn in global_filter_fns:
             fn = ModuleSpec.instantiate(filter_fn)()
             train_dataset.filter(fn)
             val_datasets = {k: v.filter(fn) for k, v in val_datasets.items()}
-
-    if cache:
-        train_dataset = train_dataset.cache()
-        val_datasets = {k: v.cache() for k, v in val_datasets.items()}
 
     # Shuffle the datasets
     if shuffle_size > 0:
@@ -249,8 +241,9 @@ def make_dataloader(
             for k, v in val_datasets.items()
         }
 
-    if repeat and not repeat_early:
-        train_dataset = train_dataset.repeat(count=repeat_count)
+    if repeat:
+        # If we have only a single train dataset, we can repeat it after shuffle for fused op.
+        train_dataset = train_dataset.repeat(count=repeat_count) if len(train_datasets) == 1 else train_dataset
         val_datasets = {k: v.repeat(count=repeat_count) for k, v in val_datasets.items()}
 
     # Decode and augment the images
