@@ -34,6 +34,7 @@ def make_dataloader(
     use_parallel_flatten: bool = True,
     prefetch: int = 0,
     split_for_jax: bool = True,
+    drop_remainder: bool = True,
     restrict_memory: bool = False,
 ):
     # Get all datasets
@@ -264,9 +265,9 @@ def make_dataloader(
     }
 
     # Finally, batch the datasets
-    train_dataset = train_dataset.batch(batch_size, num_parallel_calls=None, drop_remainder=True)
+    train_dataset = train_dataset.batch(batch_size, num_parallel_calls=None, drop_remainder=drop_remainder)
     val_datasets = {
-        k: v.batch(batch_size, num_parallel_calls=None, drop_remainder=True) for k, v in val_datasets.items()
+        k: v.batch(batch_size, num_parallel_calls=None, drop_remainder=drop_remainder) for k, v in val_datasets.items()
     }
 
     # Then, add memory limits for autotune.

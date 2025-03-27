@@ -35,7 +35,10 @@ config_flags.DEFINE_config_file(
 
 def main(_):
     # Initialize experimental jax compilation cache
-    compilation_cache.compilation_cache.set_cache_dir(os.path.expanduser("~/.jax_compilation_cache"))
+    if "JAX_COMPILATION_CACHE_DIR" not in os.environ:
+        compilation_cache.compilation_cache.set_cache_dir(os.path.expanduser("~/.jax_compilation_cache"))
+    else:
+        compilation_cache.compilation_cache.set_cache_dir(os.environ["JAX_COMPILATION_CACHE_DIR"])
 
     assert FLAGS.config.dataloader.batch_size % jax.device_count() == 0
 
