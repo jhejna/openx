@@ -153,7 +153,7 @@ def load_dataset(
         if "episode_metadata" in ep:
             metadata = tf.nest.map_structure(lambda x: tf.repeat(x, ep_len), ep["episode_metadata"])
             steps["episode_metadata"] = metadata
-
+        steps["step_idx"] = tf.range(ep_len, dtype=tf.int32)
         steps = standardization_transform(steps)  # Standardize the episode
 
         if structure is not None:
