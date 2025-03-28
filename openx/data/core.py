@@ -127,9 +127,12 @@ def load_dataset(
 
     # Determine if we have dataset statistics
     if structure is not None:
-        state_keys = tf.nest.flatten(structure["observation"].get("state", NormalizationType.NONE))
-        action_keys = tf.nest.flatten(structure["action"])
-        if any(norm_type != NormalizationType.NONE for norm_type in state_keys + action_keys):
+        normalization_keys = []
+        if "observation" in structure:
+            normalization_keys += tf.nest.flatten(structure["observation"].get("state", NormalizationType.NONE))
+        if "action" in structure:
+            normalization_keys += tf.nest.flatten(structure["action"])
+        if any(norm_type != NormalizationType.NONE for norm_type in normalization_keys):
             if dataset_statistics is None:
                 dataset_statistics = compute_dataset_statistics(
                     path, standardization_transform, recompute_statistics=recompute_statistics
@@ -175,12 +178,7 @@ def load_dataset(
 
     dataset = dataset.map(_standardize, num_parallel_calls=num_parallel_calls, deterministic=not shuffle)
     # Filter out episodes that are too short.
-    dataset = dataset.filter(lambda ep: tf.shape(tf.nest.flatten(ep["action"])[0])[0] >= minimum_length)
-
-    # TODO(jhejna): expand checks.
-    element_spec = dataset.element_spec
-    assert "observation" in element_spec
-    assert "action" in element_spec
+    dataset = dataset.filter(lambda ep: tf.shape(tf.nest.flatten(ep)[0])[0] >= minimum_length)
 
     return dataset, dataset_statistics
 
