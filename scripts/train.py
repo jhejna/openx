@@ -284,6 +284,12 @@ def main(_):
                 state_checkpointer.save(step, args=ocp.args.StandardSave(state))
                 weights_checkpointer.save(step, args=ocp.args.StandardSave(state.params))
 
+    if not FLAGS.debug:
+        state_checkpointer.wait_until_finished()
+        state_checkpointer.close()
+        weights_checkpointer.wait_until_finished()
+        weights_checkpointer.close()
+
 
 if __name__ == "__main__":
     app.run(main)
