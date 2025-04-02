@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LIBERO_DIR="path/to/libero/datasets"
-OUTPUT_DIR="path/to/output/dir"
+OUTPUT_DIR="path/to/libero_rlds"
 
 LIBERO_DATASETS=(
     "libero_10"

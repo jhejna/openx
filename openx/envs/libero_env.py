@@ -109,6 +109,7 @@ class LiberoEnv(gym.Env):
         done = self.env.env.done
         if self.terminate_early and success:
             done = True
+        info["success"] = success
         # Never terminate robot envs, but do truncate them.
         return self._format_obs(obs), reward, False, done, info
 
@@ -124,7 +125,7 @@ class LiberoEnv(gym.Env):
                 StateEncoding.GRIPPER: obs["robot0_gripper_qpos"][..., :1],
                 StateEncoding.JOINT_POS: obs["robot0_joint_pos"],
             },
-            image=dict(agent=np.flip(obs["agentview_image"]), wrist=np.flip(obs["robot0_eye_in_hand_image"])),
+            image=dict(agent=np.flipud(obs["agentview_image"]), wrist=np.flipud(obs["robot0_eye_in_hand_image"])),
             language_instruction=self.env_lang,
             task_id=self.task_id,
         )

@@ -55,19 +55,17 @@ def load_checkpoint(path: str, step: int | None = None, sharding: jax.sharding.S
 
 
 def eval_policy(
-    env: gym.Env,
-    predict: Callable,
-    rng: jax.random.PRNGKey,
-    num_ep: int = 10,
+    env: gym.Env, predict: Callable, rng: jax.random.PRNGKey, num_ep: int = 10, image_key: str | None = None
 ) -> Dict:
     if not isinstance(env, gym.vector.VectorEnv):
         env = gym.vector.SyncVectorEnv(lambda: env)
     num_envs = env.num_envs
 
-    rewards, lengths, successes = [], [], []
+    rewards, lengths, successes, videos = [], [], [], []
     ep_length = np.zeros((num_envs,), dtype=np.int32)
     ep_reward = np.zeros((num_envs,), dtype=np.float32)
     ep_success = np.zeros((num_envs,), dtype=np.bool_)
+    ep_images = [[] for _ in range(num_envs)]
     obs, info = env.reset()
     steps = 0
 
@@ -82,6 +80,10 @@ def eval_policy(
         ep_length += 1
         if "success" in info:
             ep_success = np.logical_or(ep_success, info["success"])
+        if image_key is not None:
+            all_imgs = (255 * obs["image"][image_key][:, -1]).astype(np.uint8)
+            for i in range(num_envs):
+                ep_images[i].append(all_imgs[i])
 
         # Determine if we are done.
         for i in range(num_envs):
@@ -96,5 +98,8 @@ def eval_policy(
                 ep_reward[i] = 0.0
                 ep_length[i] = 0
                 ep_success[i] = False
+                if image_key is not None:
+                    videos.append(np.array(ep_images[i]))
+                    ep_images[i] = []
 
-    return dict(reward=np.array(rewards), success=np.array(successes), length=np.array(lengths))
+    return dict(reward=np.array(rewards), success=np.array(successes), length=np.array(lengths)), videos

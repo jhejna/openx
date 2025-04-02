@@ -96,7 +96,7 @@ class RobomimicEnv(gym.Env):
         )
         if self.use_image_obs:
             new_obs["image"] = dict(
-                agent=np.flip(obs["agentview_image"], 0), wrist=np.flip(obs["robot0_eye_in_hand_image"], 0)
+                agent=np.flipud(obs["agentview_image"]), wrist=np.flipud(obs["robot0_eye_in_hand_image"])
             )
         return new_obs
 

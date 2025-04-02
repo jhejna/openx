@@ -3,6 +3,7 @@ import os
 import pprint
 
 import gymnasium as gym
+import imageio
 import jax
 import numpy as np
 import tensorflow as tf
@@ -18,6 +19,7 @@ flags.DEFINE_string("path", "/tmp/", "Path to save logs and checkpoints.")
 flags.DEFINE_string("checkpoint_step", None, "Checkpoint step to load.")
 flags.DEFINE_integer("n_eval_proc", 1, "Number of eval processes")
 flags.DEFINE_integer("num_ep", 10, "Number of episodes")
+flags.DEFINE_string("image_key", None, "The image key for saving gifs.")
 
 
 def main(_):
@@ -62,7 +64,13 @@ def main(_):
                 else gym.vector.SyncVectorEnv
             )
             env = vec_env_cls([env_fn for _ in range(FLAGS.n_eval_proc)])
-            eval_metrics = eval_policy(env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep)
+            eval_metrics, videos = eval_policy(
+                env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep, image_key=FLAGS.image_key
+            )
+            if len(videos) > 0:
+                for i, video in enumerate(videos):
+                    imageio.mimsave(f"ep_{i}.gif", video)
+
             eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
             print("#########", env_name, "#########")
             eval_metrics = jax.tree.map(lambda x: np.mean(x), eval_metrics)

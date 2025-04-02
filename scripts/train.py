@@ -268,7 +268,7 @@ def main(_):
             for env_idx, (env_name, env) in enumerate(envs.items()):
                 eval_rng = jax.random.fold_in(rng, env_idx)
                 with timer("eval/" + env_name):
-                    eval_metrics = eval_policy(
+                    eval_metrics, _ = eval_policy(
                         env, functools.partial(jitted_predict, state), eval_rng, num_ep=FLAGS.config.eval_ep
                     )
                     # Join data from each host to one global array so we log all results.

@@ -168,11 +168,12 @@ class Libero(tfds.core.GeneratorBasedBuilder):
         for demo_idx in range(len(f["data"])):
             demo = "demo_" + str(demo_idx)
             demo_length = f["data"][demo]["dones"].shape[0]
+            # Remember to fix the images by fliping them on the H axis.
             data = dict(
                 action=f["data"][demo]["actions"][:].astype(np.float32),
                 observation=dict(
-                    agent_image=f["data"][demo]["obs"]["agentview_rgb"][:],
-                    wrist_image=f["data"][demo]["obs"]["eye_in_hand_rgb"][:],
+                    agent_image=np.flip(f["data"][demo]["obs"]["agentview_rgb"][:], axis=1),  # (B, H, W, C)
+                    wrist_image=np.flip(f["data"][demo]["obs"]["eye_in_hand_rgb"][:], axis=1),
                     state=dict(
                         ee_pos=f["data"][demo]["obs"]["ee_pos"][:].astype(np.float32),
                         ee_euler=f["data"][demo]["obs"]["ee_ori"][:].astype(np.float32),
