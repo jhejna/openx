@@ -54,7 +54,9 @@ class HistoryWrapper(gym.Wrapper):
         self.observation_space = space_stack(self.env.observation_space, self.horizon)
 
     def _get_obs(self):
-        return tf.nest.map_structure(lambda *args: np.stack(args, dtype=args[0].dtype), *self.history)
+        return tf.nest.map_structure(
+            lambda *args: np.stack(args, dtype=args[0].dtype if hasattr(args[0], "dtype") else None), *self.history
+        )
 
     def step(self, action):
         obs, reward, done, trunc, info = self.env.step(action)

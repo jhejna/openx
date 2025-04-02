@@ -251,7 +251,7 @@ def make_dataloader(
     augment_kwargs = dict() if augment_kwargs is None else augment_kwargs
     _decode_and_augment = functools.partial(transforms.decode_and_augment, structure=structure, **augment_kwargs)
     train_dataset = train_dataset.map(
-        functools.partial(_decode_and_augment, train=True),
+        functools.partial(_decode_and_augment, train=augment_kwargs.get("train", True)),
         num_parallel_calls=num_parallel_calls,
         deterministic=shuffle_size > 0,
     )

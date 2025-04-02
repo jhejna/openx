@@ -12,6 +12,7 @@ from libero.libero import benchmark as libero_benchmark
 from libero.libero.envs import OffScreenRenderEnv
 from robosuite.utils import transform_utils
 
+from openx.data.datasets.libero import LIBERO_TASK_IDS
 from openx.data.utils import StateEncoding
 
 
@@ -27,6 +28,7 @@ class LiberoEnv(gym.Env):
         benchmark = libero_benchmark.get_benchmark_dict()[benchmark]()
         task_idx = benchmark.get_task_names().index(task)
         self.env_lang = benchmark.get_task(task_idx).language
+        self.task_id = LIBERO_TASK_IDS[task]
 
         env_args = {
             "bddl_file_name": benchmark.get_task_bddl_file_path(task_idx),
@@ -67,6 +69,7 @@ class LiberoEnv(gym.Env):
                         wrist=gym.spaces.Box(shape=(128, 128, 3), dtype=np.uint8, low=0, high=255),
                     )
                 ),
+                task_id=gym.spaces.Discrete(n=len(LIBERO_TASK_IDS)),
                 language_instruction=gym.spaces.Text(max_length=500),
             )
         )
@@ -123,6 +126,7 @@ class LiberoEnv(gym.Env):
             },
             image=dict(agent=np.flip(obs["agentview_image"]), wrist=np.flip(obs["robot0_eye_in_hand_image"])),
             language_instruction=self.env_lang,
+            task_id=self.task_id,
         )
 
     def reset(self, *args, **kwargs):

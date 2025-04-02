@@ -3,6 +3,7 @@ import hashlib
 import json
 from typing import Callable, Dict, List, Optional, Union
 
+import gymnasium as gym
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
@@ -63,7 +64,8 @@ STANDARD_STRUCTURE = {
 
 def filter_by_structure(tree, structure):
     if isinstance(structure, dict):
-        return {k: filter_by_structure(tree[k], v) for k, v in structure.items()}
+        tree = tree.spaces if isinstance(tree, gym.spaces.Dict) else tree
+        return {k: filter_by_structure(tree[k], v) for k, v in structure.items() if k in tree}
     return tree  # otherwise return the item from the tree (episode)
 
 

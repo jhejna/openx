@@ -88,7 +88,7 @@ If you encounter an error relating to `AttributeError: 'NoneType' object has no 
 
 When creating your base conda environment, use the following command.
 ```
-conda create -n openx-libero python=3.11 conda-forge::mesalib numba::numba "numpy<2.0"
+conda install -c conda-forge libstdcxx-ng
 ```
 and do not enable `USE_MUJOCO_PY` in `setup_shell.sh`.
 
