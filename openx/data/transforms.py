@@ -85,7 +85,7 @@ def concatenate(ep: Dict):
 
 
 def uniform_goal_relabeling(ep: Dict):
-    ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
     rand = tf.random.uniform([ep_len])
     # We shift the low and high a bit so a goal is always a future state, cannot be a current state.
     low, high = tf.cast(tf.range(ep_len) + 1, tf.float32), tf.cast(ep_len, tf.float32) + 1e-5
@@ -97,16 +97,32 @@ def uniform_goal_relabeling(ep: Dict):
 
 
 def last_goal_relabeling(ep: Dict):
-    ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
     ep["goal"] = tf.nest.map_structure(lambda x: tf.repeat(x[-1:], ep_len, axis=0), ep["observation"])
     ep["goal_index"] = (ep_len - 1) * tf.ones(ep_len, dtype=tf.int32)
     ep["horizon"] = tf.maximum(ep["goal_index"] - tf.range(ep_len), 0)
     return ep
 
 
+def add_horizon(ep: Dict):
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
+    ep["horizon"] = ep_len - tf.range(ep_len)
+    return ep
+
+
 def add_initial_observation(ep: Dict):
-    ep_len = tf.shape(tf.nest.flatten(ep["observation"])[0])[0]
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
     ep["initial_observation"] = tf.nest.map_structure(lambda x: tf.repeat(x[0:1], ep_len, axis=0), ep["observation"])
+    return ep
+
+
+def sparse_reward(ep: Dict):
+    # Note that the _second to last_ transition is labeled as reward 1, since we end up chopping the last transition.
+    # this is to allow for next obs to be sampled properly!
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
+    reward = tf.zeros(ep_len, dtype=tf.float32)
+    reward[-2] = 1.0  # Set to one
+    ep["reward"] = reward
     return ep
 
 
@@ -119,6 +135,14 @@ def add_next_observation(ep: Dict, n_step: int):
         lambda x, y: tf.concat((x, y), axis=0), next_observation, final_observation
     )
     ep["next_observation"] = next_observation
+
+    # NOTE: there is subtle bug since we don't explicitly pass the discount factor in!!!!
+    # this can be fixed later, but shouldn't effect much right now since we don't do a lot of RL
+    # Those trying to work on RL should make a PR with a good solution :)
+    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
+    reward_idx = tf.range(ep_len)[:, None] + tf.range(0, n_step)
+    reward_idx = tf.minimum(reward_idx, ep_len - 1)  # mask the actual indexes to not go over.
+    ep["reward"] = tf.reduce_sum(tf.gather(ep["reward"], reward_idx), axis=-1)
     return ep
 
 

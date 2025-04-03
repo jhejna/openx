@@ -21,6 +21,7 @@ def make_dataloader(
     n_step: int | None = None,
     add_initial_observation: bool = False,
     augment_kwargs: Optional[Dict] = None,
+    sparse_reward: bool = False,
     batch_size: int = 256,
     shuffle_size: int = 10000,
     discard_fraction: float = 0.0,
@@ -124,11 +125,19 @@ def make_dataloader(
     def _stepify(ep, dataset_id):
         ep = transforms.concatenate(ep)
         ep = transforms.add_dataset_id(ep, dataset_id)
+
         # Add goal conditioning first (no sequence)
         if goal_conditioning == "uniform":
             ep = transforms.uniform_goal_relabeling(ep)
         elif goal_conditioning == "last":
             ep = transforms.last_goal_relabeling(ep)
+        else:
+            ep = transforms.add_horizon(ep)
+
+        # Add sparse rewards if desired
+        if sparse_reward:
+            ep = transforms.sparse_reward(ep)
+
         # Add the initial observaiton if needed (also no sequence)
         if add_initial_observation:
             ep = transforms.add_initial_observation(ep)
