@@ -136,13 +136,14 @@ def add_next_observation(ep: Dict, n_step: int):
     )
     ep["next_observation"] = next_observation
 
-    # NOTE: there is subtle bug since we don't explicitly pass the discount factor in!!!!
-    # this can be fixed later, but shouldn't effect much right now since we don't do a lot of RL
-    # Those trying to work on RL should make a PR with a good solution :)
-    ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
-    reward_idx = tf.range(ep_len)[:, None] + tf.range(0, n_step)
-    reward_idx = tf.minimum(reward_idx, ep_len - 1)  # mask the actual indexes to not go over.
-    ep["reward"] = tf.reduce_sum(tf.gather(ep["reward"], reward_idx), axis=-1)
+    if "reward" in ep:
+        # NOTE: there is subtle bug since we don't explicitly pass the discount factor in!!!!
+        # this can be fixed later, but shouldn't effect much right now since we don't do a lot of RL
+        # Those trying to work on RL should make a PR with a good solution :)
+        ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
+        reward_idx = tf.range(ep_len)[:, None] + tf.range(0, n_step)
+        reward_idx = tf.minimum(reward_idx, ep_len - 1)  # mask the actual indexes to not go over.
+        ep["reward"] = tf.reduce_sum(tf.gather(ep["reward"], reward_idx), axis=-1)
     return ep
 
 
