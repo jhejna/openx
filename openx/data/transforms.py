@@ -120,9 +120,9 @@ def sparse_reward(ep: Dict):
     # Note that the _second to last_ transition is labeled as reward 1, since we end up chopping the last transition.
     # this is to allow for next obs to be sampled properly!
     ep_len = tf.shape(tf.nest.flatten(ep)[0])[0]
-    reward = tf.zeros(ep_len, dtype=tf.float32)
-    reward[-2] = 1.0  # Set to one
-    ep["reward"] = reward
+    ep["reward"] = tf.concat(
+        (tf.zeros(ep_len - 2, dtype=tf.float32), tf.ones(1, dtype=tf.float32), tf.zeros(1, dtype=tf.float32)), axis=0
+    )
     return ep
 
 
