@@ -3,6 +3,7 @@ from typing import Callable, Optional, Sequence
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 default_init = nn.initializers.xavier_uniform
 
@@ -19,15 +20,34 @@ class MLP(nn.Module):
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=default_init())(x)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
+                # NOTE: we use the ordering Layer > Activation > Normalization > Dropout
+                x = self.activation(x)
                 if self.use_layer_norm:
                     x = nn.LayerNorm()(x)
-                # In the case of using layernorm and dropout, prefer doing it this way for the actor
-                # It doesn't make sense to do dropout -> layernorm because it messes up statistics at test time.
-                # TODO: check if we should apply dropout before last proj. Assuming not.
                 if i + 1 < len(self.hidden_dims) and self.dropout_rate is not None and self.dropout_rate > 0:
+                    # NOTE: dropout is not applied at the last layer!
                     x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
-                x = self.activation(x)
         return x
+
+
+class MLPDecoder(nn.Module):
+    hidden_dims: Sequence[int]
+    activation: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
+    use_layer_norm: bool = False
+    dropout_rate: Optional[float] = None
+
+    @nn.compact
+    def __call__(self, z, x: jnp.ndarray, train: bool = False) -> jnp.ndarray:
+        z = MLP(
+            hidden_dims=self.hidden_dims,
+            activation=self.activation,
+            activate_final=True,
+            use_layer_norm=self.use_layer_norm,
+            dropout_rate=self.dropout_rate,
+        )(z)
+        # Set the projection dimen
+        x_hat = nn.Dense(np.prod(x.shape[1:]), kernel_init=nn.initializers.xavier_uniform())(z)
+        return jnp.reshape(x_hat, x.shape)  # Reshape to match the input shape
 
 
 class MLPResNetBlock(nn.Module):
@@ -101,3 +121,12 @@ class MLPResNet(nn.Module):
                 dropout_rate=self.dropout_rate,
             )(x, train=train)
         return self.activation(x)  # Shape (B, hidden_dim)
+
+
+class LearnedTaskEmbedding(nn.Module):
+    num_embeddings: int
+    num_features: int
+
+    @nn.compact
+    def __call__(self, x, train: bool = False):
+        return nn.Embed(self.num_embeddings, self.num_features)(x)

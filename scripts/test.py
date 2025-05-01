@@ -15,11 +15,12 @@ from openx.utils.evaluate import eval_policy, load_checkpoint
 from openx.utils.spec import ModuleSpec
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string("path", "/tmp/", "Path to save logs and checkpoints.")
+flags.DEFINE_string("checkpoint", "/tmp/", "Path to the checkpoint.")
 flags.DEFINE_string("checkpoint_step", None, "Checkpoint step to load.")
 flags.DEFINE_integer("n_eval_proc", 1, "Number of eval processes")
 flags.DEFINE_integer("num_ep", 10, "Number of episodes")
 flags.DEFINE_string("image_key", None, "The image key for saving gifs.")
+flags.DEFINE_string("path", None, "Path to save videos.")
 
 
 def main(_):
@@ -29,7 +30,7 @@ def main(_):
     # prevent tensorflow from using GPUs
     tf.config.set_visible_devices([], "GPU")
 
-    alg, state, dataset_statistics, config = load_checkpoint(FLAGS.path, FLAGS.checkpoint_step)
+    alg, state, dataset_statistics, config = load_checkpoint(FLAGS.checkpoint, FLAGS.checkpoint_step)
     rng = jax.random.key(config.seed)
 
     ### Define the Predict Function ###
@@ -67,9 +68,19 @@ def main(_):
             eval_metrics, videos = eval_policy(
                 env, functools.partial(jitted_predict, state), rng, num_ep=FLAGS.num_ep, image_key=FLAGS.image_key
             )
+            # Save Videos
             if len(videos) > 0:
+                path = FLAGS.path if FLAGS.path is not None else "."
+                # Parse the checkpoint name
+                ckpt_name = FLAGS.checkpoint
+                ckpt_name = ckpt_name[:-1] if ckpt_name.endswith("/") else ckpt_name
+                if os.path.basename(ckpt_name).isdigit():
+                    ckpt_name = "_".join(ckpt_name.split("/")[-2:])
+                else:
+                    ckpt_name = ckpt_name.split("/")[-1]
+                tf.io.gfile.makedirs(os.path.join(path, ckpt_name))
                 for i, video in enumerate(videos):
-                    imageio.mimsave(f"ep_{i}.gif", video)
+                    imageio.mimsave(os.path.join(path, ckpt_name, f"ep_{i}.gif"), video)
 
             eval_metrics["num_ep"] = next(iter(eval_metrics.values())).shape[0]
             print("#########", env_name, "#########")

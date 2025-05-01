@@ -289,7 +289,7 @@ class ResNetDecoder(nn.Module):
             output_pad = obs.shape[-3] - x.shape[-3]
 
         output_pad = "SAME" if obs.shape[-3] == x.shape[-3] else obs.shape[-3] - x.shape[-3] - 1
-        x = conv(3, (3, 3), padding=output_pad)(x)
+        x = conv(obs.shape[-1], (3, 3), padding=output_pad)(x)
 
         # TODO: maybe add a final activation and/or project values back to -1 to 1?
         # For now image labels are in 0, 1 range from tfds

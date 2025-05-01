@@ -195,7 +195,7 @@ class Libero(tfds.core.GeneratorBasedBuilder):
                 step = tf.nest.map_structure(lambda x, i=i: x[i], data)
                 step["language_instruction"] = language_instruction
                 # Determine if we should filter the step based on the action!
-                if _is_noop(step["action"], prev_action, threshold=5e-5):
+                if _is_noop(step["action"], prev_action, threshold=1e-6):
                     continue
                 else:
                     episode.append(step)

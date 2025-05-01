@@ -54,13 +54,11 @@ def chunk(ep: Dict, n_obs: int, n_action: int, obs_keys: Optional[Sequence] = No
     ep["mask"] = mask
 
     # Apply observation indexing
-    if obs_keys is None:
-        obs_keys = set(ep["observation"].keys())
     for k in ep["observation"]:
-        if k in obs_keys:
+        if obs_keys is None or k in obs_keys:
             ep["observation"][k] = tf.nest.map_structure(lambda x: tf.gather(x, obs_idx), ep["observation"][k])
         else:
-            ep["observation"][k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=0), ep["observation"][k])
+            ep["observation"][k] = tf.nest.map_structure(lambda x: tf.expand_dims(x, axis=1), ep["observation"][k])
 
     # Apply action indexing and mask actions as appropriate
     ep["action"] = tf.where(mask[..., None], tf.gather(ep["action"], action_idx), 0)

@@ -13,6 +13,7 @@ if __name__ == "__main__":
     parser.add_argument("--save-split", type=int, default=None)
     parser.add_argument("--split-dir", type=str, default="run_scripts")
     parser.add_argument("--prefix", type=str, default=None)
+    parser.add_argument("--tpu-split", action="store_true", default=1)
 
     args = parser.parse_args()
 
@@ -43,13 +44,26 @@ if __name__ == "__main__":
         commands.append(command_str)
 
     if args.save_split is not None:
-        for split in range(args.save_split):
+        for i, split in enumerate(range(args.save_split)):
             output_file = os.path.join(f"{args.split_dir}/job_{split}.sh")
             with open(output_file, "w") as f:
+                if args.tpu_split:
+                    if i % 2 == 0:
+                        alias = 'alias TPU01="TPU_VISIBLE_DEVICES=0,1 TPU_CHIPS_PER_HOST_BOUNDS=1,2,1 TPU_HOST_BOUNDS=1,1,1 TPU_MESH_CONTROLLER_ADDRESS=localhost:8476 TPU_MESH_CONTROLLER_PORT=8476"'  # noqa: E501
+                    else:
+                        alias = 'alias TPU23="TPU_VISIBLE_DEVICES=2,3 TPU_CHIPS_PER_HOST_BOUNDS=1,2,1 TPU_HOST_BOUNDS=1,1,1 TPU_MESH_CONTROLLER_ADDRESS=localhost:8478 TPU_MESH_CONTROLLER_PORT=8478"'  # noqa: E501
+                    f.write(alias)
+                    f.write("\n")
+
                 f.write(". " + utils.ENV_SETUP_SCRIPT)
                 f.write("\n")
+
                 for command in commands[
                     split * len(commands) // args.save_split : (split + 1) * len(commands) // args.save_split
                 ]:
-                    f.write(command + "\n")
+                    cmd = command
+                    if args.tpu_split:
+                        cmd = "TPU01 taskset -c 0-119 " + cmd if i % 2 == 0 else "TPU23 taskset -c 120-239 " + cmd
+
+                    f.write(cmd + "\n")
         print(f"Saved to run_scripts, split into {args.save_split} files")

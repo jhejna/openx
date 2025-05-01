@@ -31,6 +31,7 @@ class RobotType(StrEnum):
     UR5 = "UR5"
     XARM = "XARM"
     STRETCH = "STRETCH"
+    ALOHA = "ALOHA"
     UNKNOWN = "UNKNOWN"
 
 

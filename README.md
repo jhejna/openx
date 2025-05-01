@@ -7,7 +7,7 @@ This is a codebase primarily developed by [Joey Hejna](https://jhejna.github.io)
 ## Installation
 First, create a conda environment with python 3.11, and then install requirements and this repo.
 ```
-conda create -n openx python=3.11
+conda create -n openx python=3.12
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -86,7 +86,7 @@ To avoid installing gym, I then comment out the line `from .venv import SubprocV
 
 If you encounter an error relating to `AttributeError: 'NoneType' object has no attribute 'glGetError'` when using `MUJOCO_GL="osmesa"` try the following fix:
 
-When creating your base conda environment, use the following command.
+If it doesn't immediately work with conda, try adding the following:
 ```
 conda install -c conda-forge libstdcxx-ng
 ```

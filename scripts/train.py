@@ -77,11 +77,11 @@ def main(_):
     dataloader_config = FLAGS.config.dataloader.to_dict()
     if FLAGS.debug:
         # Limit the size of datasets for faster debugging with significantly less fileIO.
-        for dataset in dataloader_config["datasets"].items():
-            if "train_split" in dataset:
-                dataloader_config["datasets"]["train_split"] = "all[:1]"
-            if "val_split" in dataset:
-                dataloader_config["datasets"]["val_split"] = "all[:1]"
+        for dataset_config in dataloader_config["datasets"].values():
+            if "train_split" in dataset_config:
+                dataset_config["train_split"] = dataset_config["train_split"].split("[")[0] + "[:1]"
+            if "val_split" in dataset_config:
+                dataset_config["val_split"] = dataset_config["val_split"].split("[")[0] + "[:1]"
         if dataloader_config.get("shuffle_size", 0) > 0:
             dataloader_config["shuffle_size"] = 10
 
@@ -98,7 +98,7 @@ def main(_):
     val_iterators = {name: map(shard, ds) for name, ds in val_datasets.items()}
 
     # Deque the first batch to use as an example for instantiating the model
-    example_batch = jax.tree.map(lambda x: x[:1], multihost_utils.process_allgather(next(train_iterator)))
+    example_batch = jax.tree.map(lambda x: x[:1], multihost_utils.process_allgather(next(train_iterator), tiled=True))
 
     ### Construct the state ###
     # Instantiate the model
@@ -123,6 +123,7 @@ def main(_):
 
     rng, init_rng = jax.random.split(rng)
     state = alg.init(example_batch, tx, init_rng)
+    print("[openx] Model parameter count:", sum(x.size for x in jax.tree_util.tree_leaves(state.params)))
 
     # Restore if needed
     if start_step != 0:

@@ -320,29 +320,61 @@ def wrap_env(
     return env
 
 
-def preprocess_goal(
-    goal,
+def preprocess_obs(
+    obs,
     structure: Dict,
     dataset_statistics: Optional[Dict] = None,
     augment_kwargs: Optional[Dict] = None,
+    add_temporal_dim: bool = True,
 ):
-    # Processes a goal dictionary to be passed into a model
-    goal = filter_by_structure(goal, structure["observation"])
+    # Processes an obs dictionary to be passed into a model
+    obs = filter_by_structure(obs, structure["observation"])
     # Normalize and then concatenate state
-    if "state" in goal:
+    if "state" in obs:
         assert dataset_statistics is not None
         dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
-        goal["state"] = tf.nest.map_structure(
+        obs["state"] = tf.nest.map_structure(
             transforms._normalize,
-            goal["state"],
+            obs["state"],
             structure["observation"]["state"],
             dataset_statistics["mean"]["state"],
             dataset_statistics["std"]["state"],
             dataset_statistics["min"]["state"],
             dataset_statistics["max"]["state"],
         )
-        goal["state"] = np.concatenate(tf.nest.flatten(goal["state"]), axis=-1)
+        obs["state"] = np.concatenate(tf.nest.flatten(obs["state"]), axis=-1)
     # Resize images
-    goal = _resize_images(goal, structure["observation"], **(augment_kwargs if augment_kwargs is not None else {}))
+    obs = _resize_images(obs, structure["observation"], **(augment_kwargs if augment_kwargs is not None else {}))
     # Add the temporal dimension
-    return tf.nest.map_structure(lambda x: x[None], goal)
+    if add_temporal_dim:
+        return tf.nest.map_structure(lambda x: x[None], obs)
+    return obs
+
+
+def preprocess_action(
+    action,
+    structure: Dict,
+    dataset_statistics: Optional[Dict] = None,
+    add_temporal_dim: bool = True,
+):
+    dataset_statistics = filter_dataset_statistics_by_structure(dataset_statistics, structure)
+
+    action = filter_by_structure(action, structure["action"])
+    action = tf.nest.map_structure(
+        transforms._normalize,
+        action,
+        structure["action"],
+        dataset_statistics["mean"]["action"],
+        dataset_statistics["std"]["action"],
+        dataset_statistics["min"]["action"],
+        dataset_statistics["max"]["action"],
+    )
+    action = np.concatenate(tf.nest.flatten(action), axis=-1)
+
+    if add_temporal_dim:
+        return tf.nest.map_structure(lambda x: x[None], action)
+    return action
+
+
+# For legacy compatibility
+preprocess_goal = preprocess_obs

@@ -193,3 +193,65 @@ class MAPHead(nn.Module):
         y = nn.LayerNorm()(x)
         x = x + MlpBlock(mlp_dim=self.mlp_dim)(y, train=train)
         return x[:, 0]
+
+
+class TransformerActionEncoder(nn.Module):
+    """Transformer model to encode actions."""
+
+    embed_dim: int
+    output_dim: int
+    num_layers: int
+    mlp_dim: Optional[int] = None  # Defaults to 4x input dim
+    num_heads: int = 12
+    dropout_rate: float = 0.0
+    attention_dropout_rate: float = 0.0
+    dtype: Any = jnp.float32
+    use_cls_token: bool = False
+
+    @nn.compact
+    def __call__(self, action, train: bool = True):
+        x = nn.Dense(self.embed_dim)(action)
+        if self.use_cls_token:
+            cls_token = self.param("cls", nn.initializers.zeros, (1, 1, self.embed_dim), x.dtype)
+            x = jnp.concatenate((jnp.tile(cls_token, [x.shape[0], 1, 1]), x), axis=1)  # CLS at the beginning
+        x = PositionalEmbedding(dtype=self.dtype)(x)
+        x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
+        x = TransformerEncoder(
+            num_layers=self.num_layers,
+            mlp_dim=self.mlp_dim,
+            num_heads=self.num_heads,
+            dropout_rate=self.dropout_rate,
+            attention_dropout_rate=self.attention_dropout_rate,
+            dtype=self.dtype,
+        )(x, train=train)
+        if self.use_cls_token:
+            x = x[:, 0]
+        return nn.Dense(self.output_dim)(x)
+
+
+class TransformerActionDecoder(nn.Module):
+    """Transformer model to decode actions."""
+
+    embed_dim: int
+    num_layers: int
+    mlp_dim: Optional[int] = None  # Defaults to 4x input dim
+    num_heads: int = 12
+    dropout_rate: float = 0.0
+    attention_dropout_rate: float = 0.0
+    dtype: Any = jnp.float32
+
+    @nn.compact
+    def __call__(self, z, action, train: bool = True):
+        x = nn.Dense(self.embed_dim)(z)  # (B, D)
+        # Tile the action to match the size of the action
+        x = jnp.tile(x[:, None, :], [1, action.shape[1], 1])  # (B, T, D)
+        x = PositionalEmbedding(dtype=self.dtype)(x)
+        x = TransformerEncoder(
+            num_layers=self.num_layers,
+            mlp_dim=self.mlp_dim,
+            num_heads=self.num_heads,
+            dropout_rate=self.dropout_rate,
+            attention_dropout_rate=self.attention_dropout_rate,
+            dtype=self.dtype,
+        )(x, train=train)
+        return nn.Dense(action.shape[-1])(x)

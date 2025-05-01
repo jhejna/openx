@@ -1,18 +1,18 @@
 # Core
-numpy<2.0 # Do not upgrade to numpy 2.0 because of legacy benchmark deps.
+numpy>=2.0
 tensorflow==2.17.1
-tensorflow_datasets==4.9.7
+tensorflow_datasets==4.9.8
 tensorflow_graphics == 2021.12.3
 tensorflow_probability==0.25.0
 scikit-learn
 scipy
-jax==0.4.37
-flax==0.10.2
+jax==0.6.0
+flax==0.10.6
 optax==0.2.4
 distrax==0.1.5
-gymnasium
+gymnasium==1.1.1
 ml_collections
-mlcroissant
+orbax-checkpoint==0.11.13
 
 # dev
 pre-commit

@@ -9,7 +9,7 @@ from openx.utils.spec import ModuleSpec
 from . import transforms
 from .core import STANDARD_STRUCTURE, compute_dataset_statistics, load_dataset
 
-VAL_PARALLEL_CALLS = 1
+VAL_PARALLEL_CALLS = 4  # Number of parallel calls for validation datasets. Can adjust.
 
 
 def make_dataloader(
@@ -29,6 +29,7 @@ def make_dataloader(
     cache: bool = False,
     global_filter_fns: List[Callable] | None = None,
     global_dataset_statistics: str | List[str] | None = None,
+    obs_history_keys: List[str] | None = None,
     recompute_statistics: bool = False,
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
@@ -142,7 +143,7 @@ def make_dataloader(
         if add_initial_observation:
             ep = transforms.add_initial_observation(ep)
         # Add sequences
-        ep = transforms.chunk(ep, n_obs, n_action)
+        ep = transforms.chunk(ep, n_obs, n_action, obs_keys=obs_history_keys)
         # Add next observation if wanted, uses sequence
         if n_step is not None:
             ep = transforms.add_next_observation(ep, n_step)
@@ -242,11 +243,11 @@ def make_dataloader(
 
     # Shuffle the datasets
     if shuffle_size > 0:
-        train_dataset = train_dataset.shuffle(shuffle_size)
+        train_dataset = train_dataset.shuffle(shuffle_size, reshuffle_each_iteration=True)
         # The val shuffle size is automatically set to 1/10 that of the train set.
         val_datasets = {
             k: v.shuffle(
-                max(1, int(shuffle_size * weights.get(k, 1 / len(val_datasets)) // 10)),
+                max(1, int(shuffle_size * weights.get(k, 1 / len(val_datasets)) // 5)),
             )
             for k, v in val_datasets.items()
         }
