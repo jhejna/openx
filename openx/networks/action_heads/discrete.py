@@ -29,7 +29,7 @@ class DiscreteActionHead(core.ActionHead):
         x = self.model(obs, train=train) if self.model is not None else obs
         if self.action_horizon is None:
             pred_dim = self.action_dim * self.n_action_bins
-            shape = x.shape[:-1] + (self.action_dim, self.action_bins)
+            shape = (*x.shape[:-1], self.action_dim, self.action_bins)
         else:
             pred_dim = self.n_action_bins * self.action_dim * self.n_action_bins
             shape = (x.shape[0], self.action_horizon, self.action_dim, self.n_action_bins)
@@ -44,7 +44,7 @@ class DiscreteActionHead(core.ActionHead):
         if self.temperature is None:
             action = jnp.argmax(logits, axis=-1)
         else:
-            rng, key = jax.random.split(self.make_rng("dropout"))
+            _, key = jax.random.split(self.make_rng("dropout"))
             dist = distrax.Categorical(logits=logits / self.temperature)
             action = dist.sample(seed=key).astype(jnp.int32)
         return self.bin_centers[action]

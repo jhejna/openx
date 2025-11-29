@@ -39,7 +39,7 @@ class ResNetBlock(nn.Module):
         if self.transpose and (self.strides[0] > 1 or self.strides[1] > 1):
             h, w, c = y.shape[-3:]
             y = jax.image.resize(
-                x, shape=y.shape[:-3] + (self.strides[0] * h, self.strides[1] * w, c), method="nearest"
+                x, shape=(*y.shape[:-3], self.strides[0] * h, self.strides[1] * w, c), method="nearest"
             )
         y = self.conv(self.filters, (3, 3))(y)
         y = self.norm(scale_init=nn.initializers.zeros_init())(y)
@@ -49,7 +49,7 @@ class ResNetBlock(nn.Module):
                 h, w, c = residual.shape[-3:]
                 residual = jax.image.resize(
                     residual,
-                    shape=residual.shape[:-3] + (self.strides[0] * h, self.strides[1] * w, c),
+                    shape=(*residual.shape[:-3], self.strides[0] * h, self.strides[1] * w, c),
                     method="nearest",
                 )
                 kernel_size, strides = (3, 3), (1, 1)
@@ -110,14 +110,19 @@ class SpatialSoftmax(nn.Module):
             jnp.linspace(-1.0, 1.0, w, dtype=self.dtype), jnp.linspace(-1.0, 1.0, h, dtype=self.dtype)
         )
         pos_x, pos_y = pos_x.reshape((h * w, 1)), pos_y.reshape((h * w, 1))  # (H*W, 1)
-        x = x.reshape(x.shape[:-3] + (h * w, c))  # (..., H, W, C)
+        x = x.reshape((x.shape[:-3], h * w, c))  # (..., H, W, C)
 
         attention = jax.nn.softmax(x / self.temperature, axis=-2)  # (B..., H*W, K)
         expected_x = (pos_x * attention).sum(axis=-2, keepdims=True)  # (B..., 1, K)
         expected_y = (pos_y * attention).sum(axis=-2, keepdims=True)
         expected_xy = jnp.concatenate((expected_x, expected_y), axis=-2)  # (B..., 2, K)
 
-        return expected_xy.reshape(x.shape[:-2] + (2 * c,))
+        return expected_xy.reshape(
+            (
+                *x.shape[:-2],
+                2 * c,
+            )
+        )
 
 
 class SpatialCoordinates(nn.Module):
@@ -135,7 +140,7 @@ class SpatialCoordinates(nn.Module):
             jnp.linspace(-1.0, 1.0, w, dtype=self.dtype), jnp.linspace(-1.0, 1.0, h, dtype=self.dtype)
         )
         coords = jnp.stack((pos_x, pos_y), axis=-1)  # (H, W, 2)
-        coords = jnp.broadcast_to(coords, x.shape[:-3] + coords.shape)
+        coords = jnp.broadcast_to(coords, (*x.shape[:-3], coords.shape))
         return jnp.concatenate((x, coords), axis=-1)
 
 
@@ -146,7 +151,7 @@ class AttentionPool2d(nn.Module):
     @nn.compact
     def __call__(self, x, train: bool = True):
         h, w, c = x.shape[-3:]
-        x = jnp.reshape(x, x.shape[:-3] + (h * w, c))
+        x = jnp.reshape(x, (*x.shape[:-3], h * w, c))
         # the query token is the avg plus pos emb
         x = jnp.concatenate((jnp.mean(x, axis=-2, keepdims=True), x), axis=-2)
         pos_emb = self.param(
@@ -259,14 +264,14 @@ class ResNetDecoder(nn.Module):
 
         # Run initial projection
         x = nn.Dense(512)(z)
-        x = jnp.reshape(x, x.shape[:-1] + (1, 1, 512))
+        x = jnp.reshape(x, (*x.shape[:-1], 1, 1, 512))
 
         # These parameters are known to work for 84x84, 128x128, 224x224
         h, w, _ = obs.shape[-3:]
         scale_h, scale_w = round(h / 32) + 1, round(w / 32) + 1
         num_with_padding = round(h / 64) + 1
 
-        x = jax.image.resize(x, shape=x.shape[:-3] + (scale_h, scale_w, 512), method="nearest")
+        x = jax.image.resize(x, shape=(x.shape[:-3], scale_h, scale_w, 512), method="nearest")
         # Go through the same computations as before, but reverse the stage sizes.
         for i, block_size in reversed(list(enumerate(self.stage_sizes))):
             for j in reversed(list(range(block_size))):
@@ -281,7 +286,7 @@ class ResNetDecoder(nn.Module):
                     transpose=True,
                 )(x)
 
-        x = jax.image.resize(x, shape=x.shape[:-3] + (2 * x.shape[-3], 2 * x.shape[-2], x.shape[-1]), method="nearest")
+        x = jax.image.resize(x, shape=(x.shape[:-3], 2 * x.shape[-3], 2 * x.shape[-2], x.shape[-1]), method="nearest")
         if obs.shape[-3] == x.shape[-3]:
             output_pad = "PAD"
         else:

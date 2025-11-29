@@ -67,7 +67,7 @@ def main(_):
         # bins = norm.ppf(np.linspace(5e-3, 1 - 5e-3, bins + 1), scale=2)
 
         d = actions.shape[-1]
-        fig, axes = plt.subplots(d, 1, figsize=(10, 2 * d))
+        _, axes = plt.subplots(d, 1, figsize=(10, 2 * d))
         for i in range(d):
             axes[i].hist(actions[:, i], bins=bins, alpha=0.75, range=hist_range, edgecolor="black")
             axes[i].set_title(

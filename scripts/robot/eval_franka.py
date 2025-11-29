@@ -101,7 +101,7 @@ def main(_):
 
                 rng = jax.random.fold_in(rng, steps)
                 action = predict(obs, goal, rng)
-                obs, reward, done, trunc, info = env.step(action)
+                obs, _, done, trunc, _ = env.step(action)
                 image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)
                 images.append(image)
 

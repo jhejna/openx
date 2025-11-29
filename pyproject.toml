@@ -7,20 +7,45 @@ name = "openx"
 version = "0.0.1"
 description = "openx experimentation package."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 authors = [
     { name = "Joey Hejna", email = "jhejna@cs.stanford.edu" },
 ]
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 
 classifiers = [
     "Topic :: openx",
     "Private :: Do Not Upload"
 ]
 
+dependencies = [
+    "distrax>=0.1.7",
+    "flax==0.12.1",
+    "gymnasium>=1.2.2",
+    "jax==0.8.1",
+    "ml-collections>=1.1.0",
+    "optax>=0.2.6",
+    "orbax-checkpoint>=0.11.30",
+    "tensorflow==2.20",
+    "tensorflow-graphics>=2020.5.20",
+    "tqdm>=4.67.1",
+    "wandb>=0.23.0",
+]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.7",
+    "pre-commit>=4.5.0",
+]
+
+
+[tool.setuptools]
+packages = ["openx"]
+
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 lint.select = ["A", "B", "C90", "E", "F", "I", "I001", "N", "RUF", "W", "RET", "TC", "PL", "SIM", "TC", "NPY"]
 lint.ignore = ["A002", "A003", "B027", "C901", "RUF012", "PLR", "NPY002"]
 

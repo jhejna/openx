@@ -10,12 +10,12 @@ import numpy as np
 import optax
 import tensorflow as tf
 import tqdm
+import wandb
 from absl import app, flags
 from jax.experimental import compilation_cache, multihost_utils
 from ml_collections import config_flags
 from orbax import checkpoint as ocp
 
-import wandb
 from openx.data.dataloader import make_dataloader
 from openx.envs.wrappers import wrap_env
 from openx.utils.evaluate import eval_policy

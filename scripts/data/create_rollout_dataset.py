@@ -162,9 +162,7 @@ def main(_):
 
     # If you want to make a rollout dataset, this must be properly defined.
     # It might be different for each environment.
-    make_step_fn = {
-        "robomimic": _make_step_robomimic
-    }[FLAGS.dataset_type]
+    make_step_fn = {"robomimic": _make_step_robomimic}[FLAGS.dataset_type]
 
     count, num_ep = 0, 0
     while num_ep < FLAGS.num_ep:

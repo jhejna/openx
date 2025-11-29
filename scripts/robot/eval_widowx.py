@@ -104,7 +104,7 @@ def main(_):
 
     goal = preprocess_goal(goal, structure, dataset_statistics, augment_kwargs)
 
-    obs, info = env.reset()
+    obs, _ = env.reset()
     image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)
     steps = 0
     done, trunc = False, False
@@ -119,7 +119,7 @@ def main(_):
 
             rng = jax.random.fold_in(rng, steps)
             action = predict(obs, goal, rng=rng)
-            obs, reward, done, trunc, info = env.step(action)
+            obs, _, done, trunc, _ = env.step(action)
             image = (255 * obs["image"]["agent"][-1]).astype(np.uint8)
             images.append(image)
 

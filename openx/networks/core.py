@@ -85,7 +85,7 @@ class Concatenate(nn.Module):
             )  # (B, D)
         else:
             x = jnp.concatenate(
-                [jnp.reshape(modalities[k], modalities[k].shape[:2] + (-1,)) for k in sorted(modalities.keys())],
+                [jnp.reshape(modalities[k], (*modalities[k].shape[:2], -1)) for k in sorted(modalities.keys())],
                 axis=-1,
             )  # (B, T, D)
         if self.model is not None:
